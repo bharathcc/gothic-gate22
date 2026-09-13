@@ -27,6 +27,7 @@ import {
   sendAnswerAlertEmail,
   sendSmtpEmail,
   verifySmtpConnection,
+  clearRuntimeConfig,
   sendWebhookNotification,
   extractResendErrorInfo,
 } from './server/emailAlerts';
@@ -921,6 +922,16 @@ app.post('/api/admin/verify-smtp', async (_req, res) => {
   return res.json({
     ...verification,
     configured: true,
+  });
+});
+
+// Clear all runtime mail credentials & configurations
+app.post('/api/admin/clear-all-mail-settings', (_req, res) => {
+  clearRuntimeConfig();
+  console.log('[Admin Portal] All runtime mail settings and credentials have been cleared.');
+  return res.json({
+    success: true,
+    message: 'All email settings and credentials have been completely cleared.',
   });
 });
 

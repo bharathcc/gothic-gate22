@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Stethoscope,
   Activity,
-  Heart,
   Clock,
   Award,
   ArrowRight,

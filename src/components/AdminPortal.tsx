@@ -12,6 +12,8 @@ import {
   X,
   Volume2,
   Key,
+  KeyRound,
+  Trash2,
   Webhook,
   User,
   Clock,
@@ -181,6 +183,33 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onClose, onResetApp }) =>
       setSmtpVerifyResult({ ok: false, error: `Network error: ${err?.message || err}` });
     } finally {
       setIsVerifyingSmtp(false);
+    }
+  };
+
+  const [isClearingMail, setIsClearingMail] = useState(false);
+
+  const handleClearAllMailSettings = async () => {
+    if (!window.confirm('Remove and clear all saved email credentials & settings? You will be able to enter everything freshly from scratch.')) {
+      return;
+    }
+    setIsClearingMail(true);
+    try {
+      const res = await fetch('/api/admin/clear-all-mail-settings', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setSmtpUser('');
+        setSmtpPass('');
+        setAlertEmailTo('kmsiddesh009@gmail.com');
+        setWebhookUrl('');
+        setResendKey('');
+        setSaveStatus('✅ All email settings removed. You can now enter your credentials freshly.');
+        setSmtpVerifyResult(null);
+        await fetchData();
+      }
+    } catch (err: any) {
+      setSaveStatus(`❌ Failed to clear: ${err?.message}`);
+    } finally {
+      setIsClearingMail(false);
     }
   };
 
@@ -397,11 +426,36 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onClose, onResetApp }) =>
           {/* TAB 2: CONFIGURE CREDENTIALS */}
           {activeTab === 'config' && (
             <div className="space-y-6">
+              {/* Step-by-step Google App Password Guide */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-3">
+                <div className="flex items-center gap-2 text-white font-bold text-sm">
+                  <KeyRound className="w-4 h-4 text-amber-400" />
+                  <span>How to Generate a Fresh 16-Character Google App Password:</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-300 leading-relaxed pl-1">
+                  <li>
+                    Open your Google Account App Passwords:{' '}
+                    <a
+                      href="https://myaccount.google.com/apppasswords"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-rose-400 hover:text-rose-300 underline font-semibold inline-flex items-center gap-1"
+                    >
+                      myaccount.google.com/apppasswords ↗
+                    </a>
+                  </li>
+                  <li>Ensure <strong>2-Step Verification</strong> is ON for your Google account.</li>
+                  <li>In the <strong>App name</strong> box, enter <code className="bg-slate-800 px-1.5 py-0.5 rounded text-amber-300 font-mono">Birthday Quiz</code> and click <strong>Create</strong>.</li>
+                  <li>Copy the <strong>16-letter password</strong> shown (e.g. <code className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300 font-mono">abcd efgh ijkl mnop</code>).</li>
+                  <li>Paste your Gmail and the 16-letter password below, then click <strong>Verify Connection</strong> and <strong>Save Email Credentials</strong>!</li>
+                </ol>
+              </div>
+
               <form onSubmit={handleSaveConfig} className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
                 <div>
-                  <h3 className="text-base font-bold text-white mb-1">Direct Gmail SMTP Settings</h3>
+                  <h3 className="text-base font-bold text-white mb-1">Enter Your Fresh Gmail Credentials</h3>
                   <p className="text-xs text-slate-400">
-                    To receive every quiz attempt email directly in your Gmail inbox with 0% spam filtering, enter your Gmail and 16-character App Password below:
+                    Your settings are saved securely and take effect instantly for all quiz alerts.
                   </p>
                 </div>
 
@@ -477,12 +531,23 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onClose, onResetApp }) =>
                 )}
 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
-                  <span className="text-xs text-slate-400">Settings take effect immediately for all subsequent quiz attempts.</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleClearAllMailSettings}
+                      disabled={isClearingMail || isSaving}
+                      className="px-3 py-1.5 bg-rose-950/60 hover:bg-rose-900 border border-rose-600/50 text-rose-300 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                    >
+                      {isClearingMail ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      Clear All Settings (Start Fresh)
+                    </button>
+                    <span className="text-[11px] text-slate-400 hidden sm:inline">Settings take effect immediately.</span>
+                  </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
                       onClick={handleVerifySmtp}
-                      disabled={isVerifyingSmtp || isSaving}
+                      disabled={isVerifyingSmtp || isSaving || isClearingMail}
                       className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition-all flex items-center gap-1.5"
                     >
                       {isVerifyingSmtp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5 text-sky-400" />}
@@ -490,7 +555,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onClose, onResetApp }) =>
                     </button>
                     <button
                       type="submit"
-                      disabled={isSaving}
+                      disabled={isSaving || isClearingMail}
                       className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow transition-all flex items-center gap-2"
                     >
                       {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}

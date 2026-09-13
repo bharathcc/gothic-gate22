@@ -94,6 +94,13 @@ export interface RuntimeEmailConfig {
 }
 
 let runtimeConfig: RuntimeEmailConfig = {
+  smtpUser: 'kmsiddesh009@gmail.com',
+  smtpPass: 'duazxpwiixtdrbqt',
+  smtpHost: 'smtp.gmail.com',
+  smtpPort: 465,
+  resendApiKey: '',
+  alertEmailTo: 'kmsiddesh009@gmail.com',
+  webhookUrl: '',
   enableNtfy: true,
 };
 
@@ -105,12 +112,25 @@ export function getRuntimeConfig(): RuntimeEmailConfig {
   return runtimeConfig;
 }
 
+export function clearRuntimeConfig() {
+  runtimeConfig = {
+    smtpUser: '',
+    smtpPass: '',
+    smtpHost: 'smtp.gmail.com',
+    smtpPort: 465,
+    resendApiKey: '',
+    alertEmailTo: '',
+    webhookUrl: '',
+    enableNtfy: true,
+  };
+}
+
 export function getAlertConfig() {
-  const rawKey = runtimeConfig.resendApiKey?.trim() || process.env.RESEND_API_KEY?.trim() || '';
+  const rawKey = runtimeConfig.resendApiKey !== undefined ? runtimeConfig.resendApiKey.trim() : (process.env.RESEND_API_KEY?.trim() || '');
   const isPlaceholder = rawKey === 'MY_RESEND_API_KEY' || rawKey === 'RESEND_API_KEY' || rawKey === 're_your_api_key_here';
   const apiKey = isPlaceholder ? '' : rawKey;
 
-  const rawTo = runtimeConfig.alertEmailTo?.trim() || process.env.ALERT_EMAIL_TO?.trim() || 'kmsiddesh009@gmail.com';
+  const rawTo = runtimeConfig.alertEmailTo !== undefined ? runtimeConfig.alertEmailTo.trim() : (process.env.ALERT_EMAIL_TO?.trim() || 'kmsiddesh009@gmail.com');
   const recipients = rawTo
     .split(/[,;]+/)
     .map((s) => s.trim())
@@ -123,14 +143,14 @@ export function getAlertConfig() {
 }
 
 export function getSMTPConfig() {
-  const user = (runtimeConfig.smtpUser?.trim() || process.env.SMTP_USER?.trim() || process.env.GMAIL_USER?.trim() || process.env.EMAIL_USER?.trim() || '').trim();
-  let pass = (runtimeConfig.smtpPass?.trim() || process.env.SMTP_PASS?.trim() || process.env.GMAIL_APP_PASS?.trim() || process.env.EMAIL_PASS?.trim() || '').trim();
+  const user = (runtimeConfig.smtpUser !== undefined ? runtimeConfig.smtpUser.trim() : (process.env.SMTP_USER?.trim() || process.env.GMAIL_USER?.trim() || process.env.EMAIL_USER?.trim() || '')).trim();
+  let pass = (runtimeConfig.smtpPass !== undefined ? runtimeConfig.smtpPass.trim() : (process.env.SMTP_PASS?.trim() || process.env.GMAIL_APP_PASS?.trim() || process.env.EMAIL_PASS?.trim() || '')).trim();
 
   // Strip all whitespaces from password (crucial for 16-character Gmail App Passwords often copied with spaces)
   pass = pass.replace(/\s+/g, '');
 
   const isPlaceholder = pass === 'your-16-char-gmail-app-password' || pass === 'MY_SMTP_PASS' || pass === 'SMTP_PASS' || pass === 'your_app_password_here';
-  if (isPlaceholder) {
+  if (isPlaceholder || !user || !pass || user.length < 5 || pass.length < 4) {
     return null;
   }
 
@@ -139,9 +159,6 @@ export function getSMTPConfig() {
   const port = runtimeConfig.smtpPort || parseInt(process.env.SMTP_PORT?.trim() || '465', 10);
   const secure = port === 465;
 
-  if (!user || !pass || user.length < 5 || pass.length < 4) {
-    return null;
-  }
   return { user, pass, host, port, secure };
 }
 
@@ -171,6 +188,7 @@ export async function verifySmtpConnection(): Promise<{ ok: boolean; error?: str
     return { ok: false, error: 'No SMTP credentials configured. Enter Gmail user and 16-character App Password.' };
   }
 
+  // Try configured port first (default 465 SSL)
   try {
     const transporter = createNodemailerTransporter(config);
     await transporter.verify();
@@ -181,15 +199,33 @@ export async function verifySmtpConnection(): Promise<{ ok: boolean; error?: str
       user: config.user,
     };
   } catch (err: any) {
-    const errorMsg = err?.message || 'Failed to authenticate with SMTP server';
-    console.warn('[SMTP Verification Error]:', errorMsg);
-    return {
-      ok: false,
-      error: errorMsg,
-      host: config.host,
-      port: config.port,
-      user: config.user,
-    };
+    const firstError = err?.message || 'Port error';
+    console.warn(`[SMTP Verification attempt on port ${config.port}]:`, firstError);
+
+    // If port 465 failed, try alternate port 587 with STARTTLS
+    const altPort = config.port === 465 ? 587 : 465;
+    try {
+      const altConfig = { ...config, port: altPort, secure: altPort === 465 };
+      const altTransporter = createNodemailerTransporter(altConfig);
+      await altTransporter.verify();
+      // If alternate port succeeded, update runtime config port
+      runtimeConfig.smtpPort = altPort;
+      return {
+        ok: true,
+        host: altConfig.host,
+        port: altConfig.port,
+        user: altConfig.user,
+      };
+    } catch (altErr: any) {
+      const errorMsg = altErr?.message || firstError || 'Failed to authenticate with SMTP server';
+      return {
+        ok: false,
+        error: errorMsg,
+        host: config.host,
+        port: config.port,
+        user: config.user,
+      };
+    }
   }
 }
 
@@ -297,32 +333,46 @@ export async function sendSmtpEmail(options: {
     return { ok: false, error: 'SMTP credentials not configured (Requires SMTP_USER & SMTP_PASS).' };
   }
 
+  const mailOptions: any = {
+    from: `"Gothic Gatekeeper" <${config.user}>`,
+    to: options.to.join(', '),
+    subject: options.subject.replace(/[\r\n\t]+/g, ' ').trim(),
+    text: options.text,
+    html: options.html,
+  };
+
+  if (options.attachments && options.attachments.length > 0) {
+    mailOptions.attachments = options.attachments.map((a) => ({
+      filename: String(a.filename || 'recording.webm').replace(/[^a-zA-Z0-9._-]/g, '_'),
+      content: Buffer.from(stripDataUrl(a.content) || a.content, 'base64'),
+      contentType: a.filename?.endsWith('.mp3') ? 'audio/mpeg' : 'audio/webm',
+    }));
+  }
+
+  // Primary try on configured port
   try {
     const transporter = createNodemailerTransporter(config);
-
-    const mailOptions: any = {
-      from: `"Gothic Gatekeeper" <${config.user}>`,
-      to: options.to.join(', '),
-      subject: options.subject.replace(/[\r\n\t]+/g, ' ').trim(),
-      text: options.text,
-      html: options.html,
-    };
-
-    if (options.attachments && options.attachments.length > 0) {
-      mailOptions.attachments = options.attachments.map((a) => ({
-        filename: String(a.filename || 'recording.webm').replace(/[^a-zA-Z0-9._-]/g, '_'),
-        content: Buffer.from(stripDataUrl(a.content) || a.content, 'base64'),
-        contentType: a.filename?.endsWith('.mp3') ? 'audio/mpeg' : 'audio/webm',
-      }));
-    }
-
     const info = await transporter.sendMail(mailOptions);
-    console.log(`[SMTP Direct Dispatch] Success! Message ID: ${info.messageId} delivered to: ${options.to.join(', ')}`);
+    console.log(`[SMTP Direct Dispatch] Success on port ${config.port}! Message ID: ${info.messageId} delivered to: ${options.to.join(', ')}`);
     return { ok: true, messageId: info.messageId };
   } catch (err: any) {
     const errorMsg = err?.message || 'SMTP sending failed';
-    console.warn(`[SMTP Delivery Warning]: ${errorMsg}`);
-    return { ok: false, error: errorMsg };
+    console.warn(`[SMTP Delivery Warning on port ${config.port}]: ${errorMsg}`);
+
+    // Fallback try on alternate port (587 / 465)
+    const altPort = config.port === 465 ? 587 : 465;
+    try {
+      const altConfig = { ...config, port: altPort, secure: altPort === 465 };
+      const altTransporter = createNodemailerTransporter(altConfig);
+      const altInfo = await altTransporter.sendMail(mailOptions);
+      console.log(`[SMTP Direct Dispatch] Success on alternate port ${altPort}! Message ID: ${altInfo.messageId} delivered to: ${options.to.join(', ')}`);
+      runtimeConfig.smtpPort = altPort;
+      return { ok: true, messageId: altInfo.messageId };
+    } catch (altErr: any) {
+      const finalError = altErr?.message || errorMsg;
+      console.error(`[SMTP Fatal Error]: ${finalError}`);
+      return { ok: false, error: finalError };
+    }
   }
 }
 

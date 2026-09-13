@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Castle, Sparkles, CheckCircle2, RotateCcw, User, Heart, Star } from 'lucide-react';
+import { ArrowLeft, Castle, Sparkles, CheckCircle2, RotateCcw, User, Star } from 'lucide-react';
 import { VisitorUser } from '../types';
 import { soundEngine } from '../utils/soundEngine';
 

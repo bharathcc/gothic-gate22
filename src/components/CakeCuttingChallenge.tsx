@@ -20,98 +20,13 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
   const [stage, setStage] = useState<'open_button' | 'cake_cutting'>(isAlreadyCut ? 'cake_cutting' : 'open_button');
 
   // =========================================================================
-  // STAGE 1: OPEN BUTTON RUNAWAY INTERACTION
+  // STAGE 1: OPEN BUTTON INTERACTION (Directly Clickable - No Dodge, No 0/5)
   // =========================================================================
-  const [openDodgeCount, setOpenDodgeCount] = useState<number>(0);
-  const [openBtnOffset, setOpenBtnOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [openToastMsg, setOpenToastMsg] = useState<string | null>(null);
-  const [isCatchable, setIsCatchable] = useState<boolean>(false);
   const [isOpening, setIsOpening] = useState<boolean>(false);
-  const [isDodgingAnim, setIsDodgingAnim] = useState<boolean>(false);
 
-  const openArenaRef = useRef<HTMLDivElement>(null);
-  const openButtonRef = useRef<HTMLButtonElement>(null);
-  const lastOpenDodgeTimeRef = useRef<number>(0);
-  const openToastTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const dodgeCountRef = useRef<number>(0);
-
-  const MAX_OPEN_DODGES = 5;
-
-  const OPEN_DODGE_OFFSETS = [
-    { x: -115, y: -40, msg: 'Nope! Too fast! 😜' },
-    { x: 120, y: 35, msg: 'Too slow, Dracula! 😂' },
-    { x: -105, y: 45, msg: 'Almost caught me! 🏃‍♂️' },
-    { x: 110, y: -42, msg: 'Nice try! Over here! 💨' },
-    { x: -125, y: -20, msg: 'Catch me if you can! 😏' },
-    { x: 95, y: 40, msg: 'Still too slow! 🤭' },
-  ];
-
-  // Perform Open Button Dodge with high-visibility spring animation
-  const triggerOpenDodge = useCallback(() => {
-    if (isCatchable || isOpening || stage !== 'open_button') return;
-
-    const now = Date.now();
-    // Cooldown prevents accidental double-trigger on single physical tap
-    if (now - lastOpenDodgeTimeRef.current < 280) return;
-    lastOpenDodgeTimeRef.current = now;
-
-    soundEngine.playCakeDodge();
-
-    const currentCount = dodgeCountRef.current;
-    const dodgeIdx = currentCount % OPEN_DODGE_OFFSETS.length;
-    const target = OPEN_DODGE_OFFSETS[dodgeIdx];
-
-    setIsDodgingAnim(true);
-    setOpenBtnOffset({ x: target.x, y: target.y });
-    setOpenToastMsg(target.msg);
-
-    if (openToastTimerRef.current) clearTimeout(openToastTimerRef.current);
-    openToastTimerRef.current = setTimeout(() => {
-      setOpenToastMsg(null);
-      setIsDodgingAnim(false);
-    }, 900);
-
-    const nextCount = currentCount + 1;
-    dodgeCountRef.current = nextCount;
-    setOpenDodgeCount(nextCount);
-
-    // After 5 genuine dodges, button glides to center and becomes openable!
-    if (nextCount >= MAX_OPEN_DODGES) {
-      setTimeout(() => {
-        setIsCatchable(true);
-        setOpenBtnOffset({ x: 0, y: 0 });
-        setOpenToastMsg('Okay Dracula, open it now! 🎂✨');
-        setTimeout(() => setOpenToastMsg(null), 3500);
-      }, 350);
-    }
-  }, [isCatchable, isOpening, stage]);
-
-  // Desktop Hover Proximity for OPEN button
-  const handleOpenMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isCatchable || isOpening || !openButtonRef.current) return;
-    const rect = openButtonRef.current.getBoundingClientRect();
-    const btnCenterX = rect.left + rect.width / 2;
-    const btnCenterY = rect.top + rect.height / 2;
-
-    const dist = Math.hypot(e.clientX - btnCenterX, e.clientY - btnCenterY);
-
-    // When cursor gets close to the OPEN button (< 90px)
-    if (dist < 90) {
-      triggerOpenDodge();
-    }
-  };
-
-  // Mobile Tap / Touch attempt on OPEN button (guarantees runaway dodge before open)
-  const handleOpenTouch = (e: React.TouchEvent | React.MouseEvent | React.PointerEvent) => {
+  // Directly Open and transition to Stage 2 (Cake Cutting)
+  const handleOpenClick = (e: React.MouseEvent | React.TouchEvent) => {
     if (isOpening) return;
-    if (!isCatchable || dodgeCountRef.current < MAX_OPEN_DODGES) {
-      e.preventDefault();
-      e.stopPropagation();
-      triggerOpenDodge();
-      return;
-    }
-
-    // Successfully opened after 5 dodges!
     setIsOpening(true);
     soundEngine.playHoverTone();
 
@@ -126,7 +41,7 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
     // Smoothly transition to Stage 2 (Cake Cutting)
     setTimeout(() => {
       setStage('cake_cutting');
-    }, 450);
+    }, 400);
   };
 
   // =========================================================================
@@ -302,71 +217,32 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
   return (
     <div className="w-full max-w-lg mx-auto flex flex-col items-center justify-center px-4 select-none">
       {/* ========================================================================= */}
-      {/* STAGE 1: OPEN BUTTON RUNAWAY CHALLENGE */}
+      {/* STAGE 1: OPEN BUTTON (Direct, Clean, No 0/5 counter) */}
       {/* ========================================================================= */}
       {stage === 'open_button' && (
         <div className="w-full flex flex-col items-center justify-center text-center animate-fadeIn">
           {/* Header Texts */}
-          <div className="min-h-[85px] flex flex-col items-center justify-center mb-4">
+          <div className="flex flex-col items-center justify-center mb-6">
             <p className="font-cinzel text-xl sm:text-2xl md:text-3xl font-bold tracking-[0.16em] text-pink-600 drop-shadow-sm">
               One more surprise... 👀
             </p>
-            <p className="text-base sm:text-lg font-cormorant italic text-pink-500/90 tracking-wider mt-1">
+            <p className="text-base sm:text-lg font-cormorant italic text-pink-500/90 tracking-wider mt-1.5">
               Wanna see it?
             </p>
           </div>
 
-          {/* Toast Message for Open Button Dodge */}
-          <div className="h-8 flex items-center justify-center mb-2">
-            {openToastMsg ? (
-              <div className="px-4 py-1 rounded-full bg-white/95 border border-pink-300 text-rose-600 font-cinzel text-xs sm:text-sm font-bold tracking-wider shadow-md animate-bounce flex items-center gap-1.5">
-                <span>{openToastMsg}</span>
-              </div>
-            ) : (
-              <div className="text-[11px] text-pink-400/80 font-cinzel tracking-wider">
-                {openDodgeCount < MAX_OPEN_DODGES ? (
-                  <span>(Try to catch the button: {openDodgeCount}/{MAX_OPEN_DODGES})</span>
-                ) : (
-                  <span className="text-emerald-600 font-semibold">✨ Catch unlocked! ✨</span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Interactive Arena for Open Button */}
-          <div
-            ref={openArenaRef}
-            onMouseMove={handleOpenMouseMove}
-            className="relative w-full max-w-[340px] sm:max-w-[400px] h-[150px] rounded-2xl flex items-center justify-center overflow-visible select-none"
-          >
+          {/* Clean OPEN Button */}
+          <div className="relative w-full max-w-[340px] sm:max-w-[400px] py-4 flex items-center justify-center select-none">
             <button
-              ref={openButtonRef}
               type="button"
               id="btn-open-surprise"
-              onClick={handleOpenTouch}
-              onTouchStart={handleOpenTouch}
-              onPointerDown={(e) => {
-                if (!isCatchable) {
-                  e.preventDefault();
-                  triggerOpenDodge();
-                }
-              }}
-              onMouseEnter={() => {
-                if (!isCatchable && !isOpening) triggerOpenDodge();
-              }}
-              style={{
-                transform: `translate(${openBtnOffset.x}px, ${openBtnOffset.y}px) ${isDodgingAnim ? 'scale(0.95)' : 'scale(1)'}`,
-                transition: 'transform 0.26s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s',
-              }}
-              className={`group relative px-9 sm:px-11 py-3.5 sm:py-4 rounded-full font-cinzel text-sm sm:text-base font-bold tracking-[0.2em] uppercase cursor-pointer flex items-center gap-2 border transition-all duration-300 ${
-                isCatchable
-                  ? 'bg-gradient-to-r from-emerald-500 via-pink-500 to-rose-500 text-white border-amber-300 shadow-[0_0_25px_rgba(244,63,94,0.6)] animate-pulse'
-                  : 'bg-gradient-to-r from-rose-500 via-pink-500 to-rose-500 text-white border-rose-300/60 shadow-[0_8px_24px_rgba(244,63,94,0.4)] hover:scale-105 active:scale-90'
-              }`}
+              onClick={handleOpenClick}
+              disabled={isOpening}
+              className="group relative px-10 sm:px-14 py-4 sm:py-4.5 rounded-full font-cinzel text-base sm:text-lg font-bold tracking-[0.22em] uppercase cursor-pointer flex items-center gap-2.5 border border-rose-300/80 bg-gradient-to-r from-rose-500 via-pink-500 to-rose-500 text-white shadow-[0_10px_30px_rgba(244,63,94,0.45)] hover:shadow-[0_14px_40px_rgba(244,63,94,0.6)] hover:scale-105 active:scale-95 transition-all duration-300"
             >
-              <Sparkles className="w-4 h-4 text-amber-200 animate-pulse" />
-              <span>{isCatchable ? 'OPEN NOW!' : 'OPEN'}</span>
-              <Sparkles className="w-4 h-4 text-amber-200 animate-pulse" />
+              <Sparkles className="w-5 h-5 text-amber-200 animate-pulse" />
+              <span>{isOpening ? 'OPENING...' : 'OPEN'}</span>
+              <Sparkles className="w-5 h-5 text-amber-200 animate-pulse" />
             </button>
           </div>
         </div>
