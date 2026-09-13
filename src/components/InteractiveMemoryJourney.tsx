@@ -10,6 +10,10 @@ import {
   Maximize2,
   Sun,
   Smile,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  Pause,
 } from 'lucide-react';
 import { birthdayMusicPlayer } from '../utils/birthdayMusic';
 
@@ -21,6 +25,7 @@ export interface MemoryPhoto {
   subtitle: string;
 }
 
+// Exactly 18 real memory photos (puzzle image removed)
 const ALL_PHOTOS: MemoryPhoto[] = [
   {
     id: 'photo-1',
@@ -148,13 +153,6 @@ const ALL_PHOTOS: MemoryPhoto[] = [
     title: 'Strength, Grace & Ambition',
     subtitle: 'Inspiring everyone around you while keeping that brilliant smile 💫',
   },
-  {
-    id: 'photo-19',
-    url: '/IMG_7058.PNG',
-    tag: 'Grand Celebration',
-    title: 'Forever Radiant Dracula',
-    subtitle: 'Wishing you the happiest birthday celebration today and every day 🎉',
-  },
 ];
 
 interface InteractiveMemoryJourneyProps {
@@ -167,12 +165,15 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
   onReturnToEntrance,
 }) => {
   const [isMuted, setIsMuted] = useState<boolean>(birthdayMusicPlayer.getIsMuted());
-  const [selectedPhoto, setSelectedPhoto] = useState<MemoryPhoto | null>(null);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [scrollProgress, setScrollProgress] = useState<number>(0);
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [isAutoScrolling, setIsAutoScrolling] = useState<boolean>(true);
 
-  // Maintain continuous smooth music playback
+  const containerRef = useRef<HTMLDivElement>(null);
+  const autoScrollIntervalRef = useRef<number | null>(null);
+
+  // Keep sweet birthday music playing
   useEffect(() => {
     if (!birthdayMusicPlayer.getIsPlaying()) {
       try {
@@ -187,14 +188,40 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
     setIsMuted(muted);
   };
 
-  // Scroll tracking for progress indicator
+  // Smooth Gentle Auto-Glide downward scroll
+  useEffect(() => {
+    if (isAutoScrolling) {
+      autoScrollIntervalRef.current = window.setInterval(() => {
+        if (!containerRef.current) return;
+        const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+        if (scrollTop + clientHeight >= scrollHeight - 15) {
+          setIsAutoScrolling(false);
+          return;
+        }
+        containerRef.current.scrollBy({ top: 1.5, behavior: 'auto' });
+      }, 30);
+    } else {
+      if (autoScrollIntervalRef.current) {
+        clearInterval(autoScrollIntervalRef.current);
+        autoScrollIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (autoScrollIntervalRef.current) {
+        clearInterval(autoScrollIntervalRef.current);
+      }
+    };
+  }, [isAutoScrolling]);
+
+  // Track scroll progress
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     const totalScroll = scrollHeight - clientHeight;
     const progress = totalScroll > 0 ? (scrollTop / totalScroll) * 100 : 0;
     setScrollProgress(progress);
-    setShowScrollTop(scrollTop > 400);
+    setShowScrollTop(scrollTop > 350);
   };
 
   const scrollToTop = () => {
@@ -202,20 +229,41 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
   };
 
   const scrollToFirstPhoto = () => {
-    const firstCard = document.getElementById('photo-card-0');
+    const firstCard = document.getElementById('memory-card-0');
     firstCard?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Keyboard navigation for Lightbox
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (selectedPhotoIndex === null) return;
+      if (e.key === 'ArrowRight') {
+        setSelectedPhotoIndex((prev) => (prev !== null ? (prev + 1) % ALL_PHOTOS.length : 0));
+      } else if (e.key === 'ArrowLeft') {
+        setSelectedPhotoIndex((prev) =>
+          prev !== null ? (prev - 1 + ALL_PHOTOS.length) % ALL_PHOTOS.length : 0
+        );
+      } else if (e.key === 'Escape') {
+        setSelectedPhotoIndex(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPhotoIndex]);
+
+  const selectedPhoto = selectedPhotoIndex !== null ? ALL_PHOTOS[selectedPhotoIndex] : null;
 
   return (
     <div
       id="scrolling-photo-collage"
-      className="fixed inset-0 z-50 overflow-hidden select-none flex flex-col"
+      className="fixed inset-0 z-50 overflow-hidden select-none flex flex-col font-sans"
       style={{
         background: 'linear-gradient(135deg, #fff1f2 0%, #fce7f3 35%, #ffe4e6 70%, #fdf2f8 100%)',
       }}
     >
       {/* 1. TOP FLOATING STICKY HEADER & PROGRESS LINE */}
-      <div className="w-full bg-white/80 backdrop-blur-md border-b border-pink-200/80 sticky top-0 z-40 shadow-sm">
+      <div className="w-full bg-white/85 backdrop-blur-md border-b border-pink-200/80 sticky top-0 z-40 shadow-sm">
         {/* Continuous Scroll Progress Line */}
         <div className="w-full h-1.5 bg-pink-100 overflow-hidden">
           <div
@@ -224,20 +272,34 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
           />
         </div>
 
-        <header className="px-4 sm:px-8 py-3 flex items-center justify-between max-w-6xl mx-auto w-full">
-          {/* Left: Title & Badge */}
+        <header className="px-3 sm:px-8 py-2.5 sm:py-3 flex items-center justify-between max-w-6xl mx-auto w-full">
+          {/* Left: Badge */}
           <div className="flex items-center gap-2">
-            <span className="px-3.5 py-1 rounded-full bg-pink-50 border border-pink-200 text-rose-600 font-cinzel text-xs font-bold tracking-wider shadow-sm flex items-center gap-1.5">
+            <span className="px-3 py-1 rounded-full bg-pink-50 border border-pink-200 text-rose-600 font-cinzel text-xs font-bold tracking-wider shadow-sm flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-pink-500 animate-pulse" />
-              <span>Birthday Memories</span>
+              <span>Memories Gallery</span>
             </span>
-            <span className="hidden sm:inline text-xs text-pink-400/90 font-cinzel font-medium">
+            <span className="hidden md:inline text-xs text-pink-400 font-cinzel font-medium">
               {ALL_PHOTOS.length} Special Moments
             </span>
           </div>
 
-          {/* Right: Audio & Close */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          {/* Right: Controls */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setIsAutoScrolling((prev) => !prev)}
+              title={isAutoScrolling ? 'Pause auto-glide' : 'Start smooth auto-glide'}
+              className={`px-3 py-1.5 rounded-full border text-xs font-cinzel font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                isAutoScrolling
+                  ? 'bg-rose-500 text-white border-rose-600 shadow-md animate-pulse'
+                  : 'bg-white text-pink-600 border-pink-200 hover:bg-pink-50 shadow-sm'
+              }`}
+            >
+              {isAutoScrolling ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{isAutoScrolling ? 'Gliding...' : 'Auto Glide'}</span>
+            </button>
+
             <button
               type="button"
               onClick={toggleSound}
@@ -245,7 +307,7 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
               className="p-2 sm:px-3 sm:py-1.5 rounded-full bg-white hover:bg-pink-50 border border-pink-200 text-pink-600 transition-all duration-200 shadow-sm cursor-pointer flex items-center gap-1.5 text-xs font-cinzel font-bold"
             >
               {isMuted ? <VolumeX className="w-4 h-4 text-gray-400" /> : <Volume2 className="w-4 h-4 text-pink-500 animate-pulse" />}
-              <span className="hidden sm:inline">{isMuted ? 'Muted' : 'Music On 🎵'}</span>
+              <span className="hidden sm:inline">{isMuted ? 'Muted' : 'Music 🎵'}</span>
             </button>
 
             {onClose && (
@@ -253,24 +315,26 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                 type="button"
                 onClick={onClose}
                 aria-label="Back to Cake"
-                className="p-2 sm:px-3.5 sm:py-1.5 rounded-full bg-white hover:bg-rose-50 border border-pink-200 text-rose-600 transition-all duration-200 shadow-sm cursor-pointer flex items-center gap-1.5 text-xs font-cinzel font-bold hover:scale-105 active:scale-95"
+                className="p-2 sm:px-3 sm:py-1.5 rounded-full bg-white hover:bg-rose-50 border border-pink-200 text-rose-600 transition-all duration-200 shadow-sm cursor-pointer flex items-center gap-1 text-xs font-cinzel font-bold hover:scale-105 active:scale-95"
               >
                 <X className="w-4 h-4" />
-                <span className="hidden sm:inline">Back to Cake</span>
+                <span className="hidden sm:inline">Cake</span>
               </button>
             )}
           </div>
         </header>
       </div>
 
-      {/* 2. DOWN-SCROLLING COLLAGE CONTAINER */}
+      {/* ========================================================================= */}
+      {/* 2. SCROLLING PHOTO COLLAGE CONTAINER */}
+      {/* ========================================================================= */}
       <div
         ref={containerRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 md:px-8 py-8 scroll-smooth"
       >
         <div className="max-w-5xl mx-auto flex flex-col items-center">
-          {/* HERO BANNER AT TOP OF SCROLL */}
+          {/* HERO BANNER MATCHING HAPPY BIRTHDAY DRACULA */}
           <div className="text-center mb-10 sm:mb-14 pt-2">
             <div className="flex items-center justify-center gap-2 text-pink-400 mb-2">
               <Sun className="w-4 h-4 text-amber-400 animate-spin" style={{ animationDuration: '12s' }} />
@@ -279,48 +343,57 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
               </span>
               <Sparkles className="w-4 h-4 text-pink-400 animate-pulse" />
             </div>
-            <h1 className="font-cinzel text-2xl sm:text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-pink-600 to-rose-400 tracking-[0.16em] uppercase">
-              HAPPY BIRTHDAY DRACULA
+
+            <h1 className="font-cinzel text-3xl sm:text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-pink-600 to-rose-400 tracking-[0.16em] uppercase">
+              HAPPY BIRTHDAY
             </h1>
-            <p className="mt-2 text-xs sm:text-sm text-pink-500 font-cinzel tracking-wider flex items-center justify-center gap-1.5">
+            <h2 className="font-cinzel text-4xl sm:text-6xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-rose-500 to-pink-600 tracking-[0.18em] uppercase drop-shadow-sm mt-1">
+              DRACULA 🎂✨
+            </h2>
+
+            <p className="mt-3 text-xs sm:text-sm text-pink-500 font-cinzel tracking-wider flex items-center justify-center gap-1.5">
               <Smile className="w-4 h-4 text-amber-500" />
-              <span>Scroll down to explore all moments of laughter & sunshine ✨</span>
+              <span>Scroll down or tap any photo to view in high resolution ✨</span>
             </p>
 
-            {/* Quick Scroll Down Indicator */}
+            {/* Quick Scroll Down Button */}
             <button
               type="button"
               onClick={scrollToFirstPhoto}
               aria-label="Scroll Down"
-              className="mt-4 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 hover:bg-white border border-pink-200 text-pink-500 text-xs font-cinzel font-semibold shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer animate-bounce"
+              className="mt-5 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 hover:bg-white border border-pink-200 text-pink-500 text-xs font-cinzel font-semibold shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer animate-bounce"
             >
               <span>Scroll Down</span>
               <ChevronDown className="w-3.5 h-3.5 text-pink-500" />
             </button>
           </div>
 
-          {/* ANIMATED DOWN-SCROLLING PHOTO COLLAGE GRID */}
+          {/* DYNAMIC POLAROID / PHOTO COLLAGE GRID */}
           <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 pb-12">
             {ALL_PHOTOS.map((photo, index) => {
-              // Subtle slight rotation for organic photo collage feel
-              const rotationDegree = index % 3 === 0 ? -1.2 : index % 3 === 1 ? 1.2 : -0.5;
+              // Organic slight tilt angles for dynamic photo montage aesthetic
+              const rotations = [-1.5, 1.5, -0.8, 1.2, -1.2, 0.8];
+              const rotationDegree = rotations[index % rotations.length];
 
               return (
                 <div
                   key={photo.id}
-                  id={`photo-card-${index}`}
+                  id={`memory-card-${index}`}
                   className="group relative flex flex-col items-center"
                   style={{
-                    animation: `fadeInUp 0.6s ease-out ${Math.min(index * 0.08, 1.2)}s both`,
+                    animation: `fadeInUp 0.6s ease-out ${Math.min(index * 0.05, 0.9)}s both`,
                   }}
                 >
                   {/* Glowing ambient backing */}
                   <div className="absolute -inset-2 bg-gradient-to-r from-pink-300/30 via-rose-300/20 to-pink-300/30 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
+                  {/* Washi Tape / Decorative Pin Accent */}
+                  <div className="absolute -top-2.5 z-20 w-16 h-4 bg-amber-100/90 border border-amber-300/60 rounded-sm shadow-sm transform -rotate-2 opacity-80 group-hover:opacity-100 transition-opacity" />
+
                   {/* Clean Framed Photo Card with Sunshine & Laughter Captions */}
                   <div
-                    onClick={() => setSelectedPhoto(photo)}
-                    className="relative w-full bg-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl shadow-[0_8px_24px_rgba(244,114,182,0.16)] hover:shadow-[0_16px_36px_rgba(244,63,94,0.28)] border border-pink-100 hover:border-pink-300/80 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col items-center hover:-translate-y-1.5"
+                    onClick={() => setSelectedPhotoIndex(index)}
+                    className="relative w-full bg-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl shadow-[0_8px_24px_rgba(244,114,182,0.16)] hover:shadow-[0_16px_36px_rgba(244,63,94,0.28)] border border-pink-100 hover:border-pink-300/80 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col items-center hover:-translate-y-2 hover:scale-[1.02]"
                     style={{
                       transform: `rotate(${rotationDegree}deg)`,
                     }}
@@ -334,27 +407,27 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                         loading="lazy"
                         onError={(e) => {
                           const target = e.currentTarget;
-                          target.src = '/puzzle_photo.jpeg';
+                          target.src = '/IMG_6700.PNG';
                         }}
                       />
 
                       {/* Hover Overlay with Zoom Icon */}
-                      <div className="absolute inset-0 bg-rose-950/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                        <span className="p-2.5 rounded-full bg-white/95 text-pink-600 shadow-md transform scale-75 group-hover:scale-100 transition-transform duration-300">
-                          <Maximize2 className="w-4 h-4" />
+                      <div className="absolute inset-0 bg-rose-950/25 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[1px]">
+                        <span className="p-3 rounded-full bg-white text-pink-600 shadow-lg transform scale-75 group-hover:scale-100 transition-transform duration-300">
+                          <Maximize2 className="w-5 h-5" />
                         </span>
                       </div>
                     </div>
 
                     {/* Poetic Caption Box */}
-                    <div className="w-full pt-3 flex flex-col items-start text-left px-1">
+                    <div className="w-full pt-3.5 flex flex-col items-start text-left px-1">
                       <div className="w-full flex items-center justify-between mb-1">
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-pink-50 border border-pink-200/80 text-rose-600 text-[10px] font-cinzel font-bold tracking-wider uppercase">
                           <Sparkles className="w-2.5 h-2.5 text-amber-400" />
                           {photo.tag}
                         </span>
                         <span className="text-[10px] font-cinzel font-semibold tracking-widest text-pink-400 uppercase">
-                          Photo {String(index + 1).padStart(2, '0')}
+                          {String(index + 1).padStart(2, '0')} / {ALL_PHOTOS.length}
                         </span>
                       </div>
 
@@ -453,21 +526,55 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
         </button>
       )}
 
-      {/* 4. LIGHTBOX ZOOM MODAL */}
-      {selectedPhoto && (
+      {/* ========================================================================= */}
+      {/* 4. LIGHTBOX ZOOM MODAL WITH PREV / NEXT CONTROLS */}
+      {/* ========================================================================= */}
+      {selectedPhoto && selectedPhotoIndex !== null && (
         <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fadeIn"
-          onClick={() => setSelectedPhoto(null)}
+          className="fixed inset-0 z-50 bg-black/92 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fadeIn select-none"
+          onClick={() => setSelectedPhotoIndex(null)}
         >
+          {/* Close button */}
           <button
             type="button"
-            onClick={() => setSelectedPhoto(null)}
-            className="absolute top-5 right-5 p-2.5 rounded-full bg-white/20 hover:bg-white/40 text-white transition-all cursor-pointer"
+            onClick={() => setSelectedPhotoIndex(null)}
+            className="absolute top-5 right-5 p-2.5 rounded-full bg-white/20 hover:bg-white/40 text-white transition-all cursor-pointer z-50"
             aria-label="Close Lightbox"
           >
             <X className="w-6 h-6" />
           </button>
 
+          {/* Left Arrow */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPhotoIndex((prev) =>
+                prev !== null ? (prev - 1 + ALL_PHOTOS.length) % ALL_PHOTOS.length : 0
+              );
+            }}
+            aria-label="Previous Photo"
+            className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/20 hover:bg-white/40 text-white transition-all cursor-pointer z-50 hover:scale-110"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+
+          {/* Right Arrow */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPhotoIndex((prev) =>
+                prev !== null ? (prev + 1) % ALL_PHOTOS.length : 0
+              );
+            }}
+            aria-label="Next Photo"
+            className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/20 hover:bg-white/40 text-white transition-all cursor-pointer z-50 hover:scale-110"
+          >
+            <ChevronRight className="w-6 h-6" />
+          </button>
+
+          {/* Content */}
           <div
             className="flex flex-col items-center max-h-[90vh] max-w-[90vw]"
             onClick={(e) => e.stopPropagation()}
@@ -475,9 +582,17 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
             <img
               src={selectedPhoto.url}
               alt={selectedPhoto.title}
-              className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl select-none"
+              className="max-h-[72vh] max-w-[88vw] object-contain rounded-2xl shadow-2xl select-none animate-[scaleIn_0.3s_ease-out]"
             />
-            <div className="mt-3 text-center bg-black/60 px-6 py-2.5 rounded-2xl border border-white/20 backdrop-blur-md">
+            <div className="mt-3.5 text-center bg-black/70 px-6 py-3 rounded-2xl border border-white/20 backdrop-blur-md max-w-lg">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <span className="text-[10px] font-cinzel font-bold text-amber-300 uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10">
+                  {selectedPhoto.tag}
+                </span>
+                <span className="text-[10px] font-cinzel text-slate-400">
+                  {selectedPhotoIndex + 1} of {ALL_PHOTOS.length}
+                </span>
+              </div>
               <h4 className="font-cinzel text-base sm:text-lg font-bold text-white">
                 {selectedPhoto.title}
               </h4>

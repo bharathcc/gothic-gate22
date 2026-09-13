@@ -100,7 +100,7 @@ app.get('/api/health', (_req, res) => {
   const key = process.env.GEMINI_API_KEY?.trim();
   res.json({
     status: 'ok',
-    transcriptionModel: 'gemini-2.5-flash',
+    transcriptionModel: 'gemini-3.5-transcribe',
     geminiConfigured: Boolean(key && key !== 'MY_GEMINI_API_KEY'),
   });
 });
@@ -137,7 +137,7 @@ app.post('/api/transcribe', async (req, res) => {
 
     try {
       const result = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.5-transcribe',
         contents: [
           {
             inlineData: {
@@ -155,7 +155,7 @@ app.post('/api/transcribe', async (req, res) => {
       console.warn('[Audio Transcribe] Primary model notice:', primaryErr?.message || primaryErr);
       try {
         const fallbackResult = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.6-flash',
           contents: [
             {
               inlineData: {
@@ -170,10 +170,29 @@ app.post('/api/transcribe', async (req, res) => {
         });
         transcript = fallbackResult.text?.trim() || '';
       } catch (fallbackErr: any) {
-        return res.status(200).json({
-          success: false,
-          error: "We couldn't hear the answer clearly. Please sing it again or type it below.",
-        });
+        console.warn('[Audio Transcribe] Fallback model notice:', fallbackErr?.message || fallbackErr);
+        try {
+          const tertiaryResult = await ai.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: [
+              {
+                inlineData: {
+                  data,
+                  mimeType: mime,
+                },
+              },
+              {
+                text: transcriptionPrompt,
+              },
+            ],
+          });
+          transcript = tertiaryResult.text?.trim() || '';
+        } catch (tertiaryErr: any) {
+          return res.status(200).json({
+            success: false,
+            error: "We couldn't hear the answer clearly. Please sing it again or type it below.",
+          });
+        }
       }
     }
 

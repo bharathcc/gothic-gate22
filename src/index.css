@@ -607,3 +607,56 @@
   }
 }
 
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes gothicScrollDown {
+  0% {
+    transform: translateY(-50%);
+  }
+  100% {
+    transform: translateY(0%);
+  }
+}
+
+@keyframes gothicScrollDownAlt {
+  0% {
+    transform: translateY(-50%);
+  }
+  100% {
+    transform: translateY(0%);
+  }
+}
+
+.animate-gothic-down {
+  animation: gothicScrollDown 45s linear infinite;
+}
+
+.animate-gothic-down-slow {
+  animation: gothicScrollDown 65s linear infinite;
+}
+
+.animate-gothic-down-fast {
+  animation: gothicScrollDown 30s linear infinite;
+}
+
+.pause-animation {
+  animation-play-state: paused !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
