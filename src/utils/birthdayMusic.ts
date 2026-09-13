@@ -17,8 +17,9 @@ class BirthdayMusicPlayer {
   private masterGain: GainNode | null = null;
   private isPlaying: boolean = false;
   private isMuted: boolean = false;
-  private loopInterval: number | null = null;
+  private loopTimeout: NodeJS.Timeout | null = null;
   private activeVoices: ActiveVoice[] = [];
+  private sequenceStartTime: number = 0;
 
   // Notes in Hz for Happy Birthday melody in C / F major with soft sweet voicing
   private notes: { [key: string]: number } = {
@@ -80,12 +81,12 @@ class BirthdayMusicPlayer {
       if (AudioCtx) {
         this.ctx = new AudioCtx();
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.35, this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.32, this.ctx.currentTime);
         this.masterGain.connect(this.ctx.destination);
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      void this.ctx.resume();
     }
   }
 
@@ -139,6 +140,8 @@ class BirthdayMusicPlayer {
   private stopAllVoices() {
     this.activeVoices.forEach((v) => {
       try {
+        v.gain.gain.setValueAtTime(0, this.ctx?.currentTime || 0);
+        v.overtoneGain.gain.setValueAtTime(0, this.ctx?.currentTime || 0);
         v.osc.stop();
         v.overtone.stop();
         v.osc.disconnect();
@@ -152,11 +155,28 @@ class BirthdayMusicPlayer {
     this.activeVoices = [];
   }
 
+  private scheduleNextLoop() {
+    if (!this.isPlaying) return;
+    if (this.loopTimeout) {
+      clearTimeout(this.loopTimeout);
+      this.loopTimeout = null;
+    }
+
+    this.playSequence();
+
+    this.loopTimeout = setTimeout(() => {
+      if (this.isPlaying) {
+        this.scheduleNextLoop();
+      }
+    }, (this.totalDuration - 0.2) * 1000);
+  }
+
   private playSequence() {
     if (!this.ctx || !this.isPlaying || this.isMuted) return;
 
     this.cleanFinishedVoices();
     const baseTime = this.ctx.currentTime + 0.05;
+    this.sequenceStartTime = baseTime;
 
     this.melody.forEach((item) => {
       const freq = this.notes[item.note];
@@ -177,36 +197,29 @@ class BirthdayMusicPlayer {
   public start(forceRestart: boolean = false) {
     this.initAudio();
 
-    // If already actively playing and not forcing restart, don't double-schedule notes!
+    // Prevent double playback if already playing!
     if (this.isPlaying && !forceRestart) {
       if (this.ctx && this.ctx.state === 'suspended') {
-        this.ctx.resume();
+        void this.ctx.resume();
       }
       return;
     }
 
-    this.stop(); // Clear any existing intervals & voices
+    this.stop(); // Clear any existing intervals & voices cleanly
     this.isPlaying = true;
 
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.35, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.32, this.ctx.currentTime);
     }
 
-    this.playSequence();
-
-    // Loop every totalDuration seconds
-    this.loopInterval = window.setInterval(() => {
-      if (this.isPlaying) {
-        this.playSequence();
-      }
-    }, this.totalDuration * 1000);
+    this.scheduleNextLoop();
   }
 
   public stop() {
     this.isPlaying = false;
-    if (this.loopInterval !== null) {
-      clearInterval(this.loopInterval);
-      this.loopInterval = null;
+    if (this.loopTimeout) {
+      clearTimeout(this.loopTimeout);
+      this.loopTimeout = null;
     }
     this.stopAllVoices();
   }
@@ -214,7 +227,7 @@ class BirthdayMusicPlayer {
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.35, this.ctx.currentTime, 0.1);
+      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.32, this.ctx.currentTime, 0.1);
     }
     if (!this.isMuted && this.isPlaying && this.activeVoices.length === 0) {
       this.playSequence();
