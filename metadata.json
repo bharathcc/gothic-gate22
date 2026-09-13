@@ -1,0 +1,6 @@
+{
+  "name": "Gothic Entrance Challenge",
+  "description": "Cinematic, dark gothic Dracula-inspired interactive voice entrance challenge with atmospheric storm and lightning effects.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

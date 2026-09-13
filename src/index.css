@@ -1,0 +1,596 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --gothic-bg: #03070d;
+    --gothic-steel: #1a2636;
+    --gothic-blue: #0f1d2e;
+    --gothic-accent: #3a6288;
+    --gothic-glow: rgba(72, 126, 176, 0.4);
+    --vampire-crimson: #6d1010;
+  }
+
+  body {
+    background-color: #02050a;
+    color: #cbd5e1;
+    font-family: 'Cormorant Garamond', serif;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  [data-puzzle-index],
+  #puzzle-grid-board,
+  .puzzle-board-container {
+    -webkit-user-drag: none;
+    user-drag: none;
+    touch-action: none !important;
+    -webkit-touch-callout: none;
+    overscroll-behavior: contain;
+  }
+}
+
+.font-cinzel {
+  font-family: 'Cinzel', serif;
+}
+
+.font-cinzel-decorative {
+  font-family: 'Cinzel Decorative', serif;
+}
+
+.font-cormorant {
+  font-family: 'Cormorant Garamond', serif;
+}
+
+/* Custom cinematic fog animation */
+@keyframes fogDriftSlow {
+  0% {
+    transform: translate3d(-5%, 0, 0) scale(1.05);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate3d(5%, -2%, 0) scale(1.1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translate3d(-5%, 0, 0) scale(1.05);
+    opacity: 0.35;
+  }
+}
+
+@keyframes fogDriftFast {
+  0% {
+    transform: translate3d(8%, 2%, 0) scale(1.1);
+    opacity: 0.25;
+  }
+  50% {
+    transform: translate3d(-8%, -1%, 0) scale(1);
+    opacity: 0.45;
+  }
+  100% {
+    transform: translate3d(8%, 2%, 0) scale(1.1);
+    opacity: 0.25;
+  }
+}
+
+@keyframes subtleBreathing {
+  0%, 100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.015) translateY(-2px);
+  }
+}
+
+@keyframes lightningFlash {
+  0% {
+    opacity: 0;
+  }
+  2% {
+    opacity: 0.85;
+  }
+  4% {
+    opacity: 0.1;
+  }
+  7% {
+    opacity: 0.95;
+  }
+  10% {
+    opacity: 0.2;
+  }
+  14% {
+    opacity: 0.6;
+  }
+  20% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes gatePartLeft {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-120%);
+    opacity: 0.1;
+  }
+}
+
+@keyframes gatePartRight {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(120%);
+    opacity: 0.1;
+  }
+}
+
+@keyframes micPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(72, 136, 196, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 22px rgba(72, 136, 196, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(72, 136, 196, 0);
+  }
+}
+
+.animate-fog-slow {
+  animation: fogDriftSlow 32s ease-in-out infinite;
+}
+
+.animate-fog-fast {
+  animation: fogDriftFast 24s ease-in-out infinite;
+}
+
+.animate-subtle-breathe {
+  animation: subtleBreathing 7s ease-in-out infinite;
+}
+
+.animate-mic-pulse {
+  animation: micPulse 1.8s cubic-bezier(0.66, 0, 0, 1) infinite;
+}
+
+.lightning-active {
+  animation: lightningFlash 1.6s ease-out forwards;
+}
+
+/* Glassmorphism panel for gothic UI */
+.gothic-glass {
+  background: radial-gradient(circle at 50% 0%, rgba(18, 30, 46, 0.85) 0%, rgba(6, 12, 20, 0.92) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(74, 114, 154, 0.28);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9), 0 0 35px rgba(26, 54, 84, 0.25), inset 0 1px 1px rgba(140, 190, 240, 0.15);
+}
+
+.gothic-btn {
+  background: linear-gradient(180deg, rgba(22, 38, 58, 0.9) 0%, rgba(10, 20, 32, 0.95) 100%);
+  border: 1px solid rgba(80, 130, 180, 0.35);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(160, 200, 245, 0.2);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes shake {
+  10%, 90% {
+    transform: translate3d(-2px, 0, 0);
+  }
+  20%, 80% {
+    transform: translate3d(4px, 0, 0);
+  }
+  30%, 50%, 70% {
+    transform: translate3d(-6px, 0, 0);
+  }
+  40%, 60% {
+    transform: translate3d(6px, 0, 0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.gothic-btn:hover {
+  border-color: rgba(120, 180, 240, 0.65);
+  box-shadow: 0 0 20px rgba(72, 136, 196, 0.4), inset 0 1px 0 rgba(180, 220, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ========================================================================= */
+/* PAGE 3 ATMOSPHERIC LIVING GOTHIC ENVIRONMENT ANIMATIONS */
+/* ========================================================================= */
+
+@keyframes flameFlickerA {
+  0%, 100% {
+    transform: scale(1) skewX(0deg);
+    opacity: 0.95;
+    filter: drop-shadow(0 0 8px rgba(251, 146, 60, 0.8)) drop-shadow(0 0 16px rgba(234, 88, 12, 0.6));
+  }
+  25% {
+    transform: scale(1.08, 0.94) skewX(-1.5deg) translateY(-1px);
+    opacity: 1;
+    filter: drop-shadow(0 0 12px rgba(251, 191, 36, 0.9)) drop-shadow(0 0 22px rgba(249, 115, 22, 0.7));
+  }
+  50% {
+    transform: scale(0.96, 1.05) skewX(1deg);
+    opacity: 0.88;
+    filter: drop-shadow(0 0 7px rgba(251, 146, 60, 0.75)) drop-shadow(0 0 14px rgba(234, 88, 12, 0.5));
+  }
+  75% {
+    transform: scale(1.04, 0.98) skewX(-0.8deg);
+    opacity: 0.98;
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.85)) drop-shadow(0 0 18px rgba(249, 115, 22, 0.6));
+  }
+}
+
+@keyframes flameFlickerB {
+  0%, 100% {
+    transform: scale(0.98, 1.02) skewX(1deg);
+    opacity: 0.9;
+  }
+  30% {
+    transform: scale(1.05, 0.95) skewX(-1.2deg) translateY(-1px);
+    opacity: 1;
+  }
+  65% {
+    transform: scale(0.94, 1.06) skewX(1.4deg);
+    opacity: 0.85;
+  }
+}
+
+@keyframes flameFlickerC {
+  0%, 100% {
+    transform: scale(1.02, 0.98) skewX(-1deg);
+    opacity: 0.92;
+  }
+  40% {
+    transform: scale(0.95, 1.04) skewX(1.8deg) translateY(-1px);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1.07, 0.96) skewX(-1deg);
+    opacity: 0.88;
+  }
+}
+
+@keyframes hearthPulse {
+  0%, 100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  35% {
+    opacity: 0.95;
+    transform: scale(1.04);
+  }
+  70% {
+    opacity: 0.65;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes candleGlowPulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes emberRise {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.8);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-80px) translateX(calc((var(--ember-dir, 1)) * 25px)) scale(0.2);
+    opacity: 0;
+  }
+}
+
+@keyframes dustDrift {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.6;
+  }
+  75% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate3d(30px, -45px, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes curtainBreeze {
+  0%, 100% {
+    transform: skewX(0deg) scaleX(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: skewX(-0.8deg) scaleX(1.015);
+    opacity: 0.45;
+  }
+}
+
+@keyframes moonlightBeam {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes clockPendulum {
+  0%, 100% {
+    transform: rotate(4.5deg);
+  }
+  50% {
+    transform: rotate(-4.5deg);
+  }
+}
+
+@keyframes paperRustle {
+  0%, 100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(0.6deg) translateY(-1px);
+  }
+}
+
+.animate-flame-a {
+  animation: flameFlickerA 1.8s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-flame-b {
+  animation: flameFlickerB 2.3s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-flame-c {
+  animation: flameFlickerC 1.6s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-hearth-glow {
+  animation: hearthPulse 3.5s ease-in-out infinite;
+}
+
+.animate-candle-glow {
+  animation: candleGlowPulse 2.8s ease-in-out infinite;
+}
+
+.animate-curtain-breeze {
+  animation: curtainBreeze 8s ease-in-out infinite;
+  transform-origin: top left;
+}
+
+.animate-moonlight {
+  animation: moonlightBeam 9s ease-in-out infinite;
+}
+
+.animate-pendulum {
+  animation: clockPendulum 2.4s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+.animate-paper-rustle {
+  animation: paperRustle 5s ease-in-out infinite;
+}
+
+/* ========================================================================= */
+/* WAKE UP DRACULA MINI-GAME ANIMATIONS */
+/* ========================================================================= */
+
+@keyframes draculaBreathe {
+  0%, 100% {
+    transform: translateY(0) scaleY(1);
+  }
+  50% {
+    transform: translateY(-4px) scaleY(1.02);
+  }
+}
+
+@keyframes snoreFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.7) rotate(-5deg);
+  }
+  30% {
+    opacity: 0.9;
+    transform: translateY(-12px) scale(1) rotate(0deg);
+  }
+  70% {
+    opacity: 0.8;
+    transform: translateY(-24px) scale(1.15) rotate(6deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-38px) scale(1.3) rotate(12deg);
+  }
+}
+
+@keyframes draculaJolt {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  30% {
+    transform: scale(0.96) rotate(-2deg) translateY(2px);
+  }
+  60% {
+    transform: scale(1.04) rotate(1.5deg) translateY(-2px);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes draculaAngryPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 25px rgba(239, 68, 68, 0.9)) drop-shadow(0 0 45px rgba(185, 28, 28, 0.6));
+  }
+}
+
+@keyframes keyCenterFloat {
+  0% {
+    transform: scale(0.3) rotate(-30deg);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(1.2) rotate(15deg);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.0) rotate(-5deg);
+  }
+  100% {
+    transform: scale(1.05) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes sparkleGlow {
+  0%, 100% {
+    transform: scale(0.9) rotate(0deg);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.25) rotate(90deg);
+    opacity: 1;
+  }
+}
+
+.animate-dracula-breathe {
+  animation: draculaBreathe 4s ease-in-out infinite;
+}
+
+.animate-snore-float {
+  animation: snoreFloat 3.2s ease-out infinite;
+}
+
+.animate-dracula-jolt {
+  animation: draculaJolt 0.25s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.animate-dracula-angry {
+  animation: draculaAngryPulse 1.2s ease-in-out infinite;
+}
+
+.animate-key-float {
+  animation: keyCenterFloat 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.animate-sparkle {
+  animation: sparkleGlow 2s ease-in-out infinite;
+}
+
+/* ========================================================================= */
+/* DR. DRACULA MBBS QUIZ ANIMATIONS */
+/* ========================================================================= */
+
+@keyframes heartbeatPulse {
+  0% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.1);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.15);
+  }
+  70% {
+    transform: scale(1);
+  }
+}
+
+@keyframes bloodRedPulse {
+  0%, 100% {
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.3), inset 0 0 15px rgba(239, 68, 68, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 60px rgba(239, 68, 68, 0.7), inset 0 0 30px rgba(239, 68, 68, 0.3);
+  }
+}
+
+@keyframes medicalFloat {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(4deg);
+  }
+}
+
+.animate-heartbeat {
+  animation: heartbeatPulse 1.2s ease-in-out infinite;
+}
+
+.animate-blood-pulse {
+  animation: bloodRedPulse 2s ease-in-out infinite;
+}
+
+.animate-medical-float {
+  animation: medicalFloat 3.5s ease-in-out infinite;
+}
+
+@keyframes subtleBreathing {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.015);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
