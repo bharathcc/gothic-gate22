@@ -9,6 +9,10 @@ import {
   getAlertConfig,
   getSMTPConfig,
   getWebhookUrl,
+  getRuntimeConfig,
+  setRuntimeConfig,
+  sendNtfyNotification,
+  NTFY_TOPIC,
   escapeHtml,
   stripDataUrl,
   formatAttemptTime,
@@ -826,10 +830,17 @@ app.get('/api/admin/status', (_req, res) => {
   const { apiKey, to, from } = getAlertConfig();
   const smtpConfig = getSMTPConfig();
   const webhookUrl = getWebhookUrl();
+  const runtime = getRuntimeConfig();
 
   return res.json({
     recipient: to,
     sender: from,
+    ntfy: {
+      configured: runtime.enableNtfy !== false,
+      topic: NTFY_TOPIC,
+      topicUrl: `https://ntfy.sh/${NTFY_TOPIC}`,
+      forwardEmail: to[0] || 'kmsiddesh009@gmail.com',
+    },
     smtp: {
       configured: Boolean(smtpConfig),
       user: smtpConfig ? smtpConfig.user : null,
@@ -848,37 +859,89 @@ app.get('/api/admin/status', (_req, res) => {
   });
 });
 
+// Update runtime email config dynamically
+app.post('/api/admin/config', (req, res) => {
+  const { smtpUser, smtpPass, smtpHost, smtpPort, resendApiKey, alertEmailTo, webhookUrl, enableNtfy } = req.body || {};
+  setRuntimeConfig({
+    ...(smtpUser !== undefined ? { smtpUser: String(smtpUser).trim() } : {}),
+    ...(smtpPass !== undefined ? { smtpPass: String(smtpPass).trim() } : {}),
+    ...(smtpHost !== undefined ? { smtpHost: String(smtpHost).trim() } : {}),
+    ...(smtpPort !== undefined ? { smtpPort: Number(smtpPort) || 465 } : {}),
+    ...(resendApiKey !== undefined ? { resendApiKey: String(resendApiKey).trim() } : {}),
+    ...(alertEmailTo !== undefined ? { alertEmailTo: String(alertEmailTo).trim() } : {}),
+    ...(webhookUrl !== undefined ? { webhookUrl: String(webhookUrl).trim() } : {}),
+    ...(enableNtfy !== undefined ? { enableNtfy: Boolean(enableNtfy) } : {}),
+  });
+
+  const { apiKey, to, from } = getAlertConfig();
+  const smtpConfig = getSMTPConfig();
+  const wh = getWebhookUrl();
+
+  return res.json({
+    success: true,
+    message: 'Configuration updated successfully!',
+    recipient: to,
+    sender: from,
+    smtpConfigured: Boolean(smtpConfig),
+    resendConfigured: Boolean(apiKey && apiKey.length > 5),
+    webhookConfigured: Boolean(wh),
+    ntfyTopic: NTFY_TOPIC,
+  });
+});
+
 // Test dispatch across all channels
 app.post('/api/admin/test-dispatch', async (_req, res) => {
   const { apiKey, to } = getAlertConfig();
   const smtpConfig = getSMTPConfig();
   const webhookUrl = getWebhookUrl();
+  const runtime = getRuntimeConfig();
 
   const results: any = {
     recipient: to,
+    ntfy: null,
     smtp: null,
     resend: null,
     webhook: null,
   };
 
+  // 1. Test ntfy.sh (Zero-config instant cloud notification + email forward)
+  try {
+    const ntfyRes = await sendNtfyNotification({
+      title: '🧛 Gothic Gate — Test Cloud Alert',
+      message: `Test alert dispatched from Gothic Castle Gatekeeper to ${to.join(', ')}.\nAll quiz attempts, answers, and scores will be sent in real time!`,
+      tags: ['vampire', 'tada', 'trophy'],
+      priority: 'high',
+      forwardEmail: to[0] || 'kmsiddesh009@gmail.com',
+    });
+    results.ntfy = {
+      ok: ntfyRes.ok,
+      topicUrl: `https://ntfy.sh/${NTFY_TOPIC}`,
+      forwardEmail: to[0] || 'kmsiddesh009@gmail.com',
+    };
+  } catch (err: any) {
+    results.ntfy = { ok: false, error: err?.message };
+  }
+
+  // 2. Test SMTP
   if (smtpConfig) {
     const smtpRes = await sendSmtpEmail({
       to,
-      subject: '🧛 Gothic Gate — Test Email via SMTP',
-      text: 'Congratulations! Your SMTP (Gmail) integration is active and working. You will receive all entrance attempts, puzzle solutions, MBBS exam scores, couple trivia, and complete dossiers directly.',
+      subject: '🧛 Gothic Gate — Test Email via Gmail SMTP',
+      text: `Congratulations! Your Gmail SMTP integration is active and working. You will receive all entrance attempts, MBBS quiz attempts, couple trivia, and complete dossiers directly at ${to.join(', ')}.`,
       html: `
         <div style="background: #0f172a; color: #f8fafc; padding: 24px; border-radius: 8px; font-family: sans-serif;">
           <h2 style="color: #38bdf8;">🏰 Gothic Gate SMTP Test</h2>
           <p>Your Gmail SMTP connection is working perfectly!</p>
-          <p>All visitor riddle answers, puzzle solutions, MBBS exam scores, couple trivia choices, and voice recordings will be delivered directly here.</p>
+          <p>All visitor riddle answers, MBBS quiz scores, couple trivia choices, and voice recordings will be delivered directly to <strong>${escapeHtml(to.join(', '))}</strong>.</p>
         </div>
       `,
     });
     results.smtp = smtpRes;
   } else {
-    results.smtp = { ok: false, error: 'SMTP not configured (Add SMTP_USER & SMTP_PASS in Settings)' };
+    results.smtp = { ok: false, error: 'SMTP not configured yet (Enter Gmail address & 16-character App Password)' };
   }
 
+  // 3. Test Resend
   if (apiKey) {
     try {
       const resp = await fetch('https://api.resend.com/emails', {
@@ -900,21 +963,23 @@ app.post('/api/admin/test-dispatch', async (_req, res) => {
       results.resend = { ok: false, error: err?.message };
     }
   } else {
-    results.resend = { ok: false, error: 'Resend not configured (Add RESEND_API_KEY in Settings)' };
+    results.resend = { ok: false, error: 'Resend not configured (Enter RESEND_API_KEY if desired)' };
   }
 
+  // 4. Test Webhook
   if (webhookUrl) {
     const whRes = await sendWebhookNotification({
       title: '🧛 Gothic Gate — Test Alert',
-      description: 'Webhook integration is working properly! All visitor activities will be delivered in real-time.',
+      description: `Webhook integration is working properly! All visitor activities are delivered to ${to.join(', ')}.`,
       fields: [{ name: 'Test Status', value: '✅ Connected' }],
     });
     results.webhook = whRes;
   } else {
-    results.webhook = { ok: false, error: 'Webhook not configured (Add WEBHOOK_URL in Settings)' };
+    results.webhook = { ok: false, error: 'Webhook not configured' };
   }
 
   const anySuccess = Boolean(
+    (results.ntfy && results.ntfy.ok) ||
     (results.smtp && results.smtp.ok) ||
     (results.resend && results.resend.ok) ||
     (results.webhook && results.webhook.ok)
@@ -923,9 +988,10 @@ app.post('/api/admin/test-dispatch', async (_req, res) => {
   return res.json({
     success: anySuccess,
     results,
-    advice: !anySuccess
-      ? 'To receive emails instantly without domain verification, set SMTP_USER="your-email@gmail.com" and SMTP_PASS="your-16-character-app-password" in Settings -> Environment Variables. You can also paste a Discord Webhook URL into WEBHOOK_URL for instant mobile notifications!'
-      : 'At least one delivery channel is active and receiving alerts!',
+    ntfyTopicUrl: `https://ntfy.sh/${NTFY_TOPIC}`,
+    advice: results.smtp?.ok
+      ? `✅ Direct Gmail SMTP is active! Emails are being delivered to ${to.join(', ')}.`
+      : `🚀 Zero-config Cloud Alerts are active on https://ntfy.sh/${NTFY_TOPIC} and forwarded to ${to.join(', ')}. To also receive direct Gmail inbox delivery, simply enter your Gmail App Password in the Email tab below!`,
   });
 });
 

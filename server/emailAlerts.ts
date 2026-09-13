@@ -82,12 +82,35 @@ export function formatAttemptTime(isoString?: string): string {
   }
 }
 
+export interface RuntimeEmailConfig {
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  resendApiKey?: string;
+  alertEmailTo?: string;
+  webhookUrl?: string;
+  enableNtfy?: boolean;
+}
+
+let runtimeConfig: RuntimeEmailConfig = {
+  enableNtfy: true,
+};
+
+export function setRuntimeConfig(config: Partial<RuntimeEmailConfig>) {
+  runtimeConfig = { ...runtimeConfig, ...config };
+}
+
+export function getRuntimeConfig(): RuntimeEmailConfig {
+  return runtimeConfig;
+}
+
 export function getAlertConfig() {
-  const rawKey = process.env.RESEND_API_KEY?.trim() || '';
+  const rawKey = runtimeConfig.resendApiKey?.trim() || process.env.RESEND_API_KEY?.trim() || '';
   const isPlaceholder = rawKey === 'MY_RESEND_API_KEY' || rawKey === 'RESEND_API_KEY' || rawKey === 're_your_api_key_here';
   const apiKey = isPlaceholder ? '' : rawKey;
 
-  const rawTo = process.env.ALERT_EMAIL_TO?.trim() || 'kmsiddesh009@gmail.com';
+  const rawTo = runtimeConfig.alertEmailTo?.trim() || process.env.ALERT_EMAIL_TO?.trim() || 'kmsiddesh009@gmail.com';
   const recipients = rawTo
     .split(/[,;]+/)
     .map((s) => s.trim())
@@ -100,10 +123,10 @@ export function getAlertConfig() {
 }
 
 export function getSMTPConfig() {
-  const user = process.env.SMTP_USER?.trim() || process.env.GMAIL_USER?.trim() || '';
-  const pass = process.env.SMTP_PASS?.trim() || process.env.GMAIL_APP_PASS?.trim() || '';
-  const host = process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
-  const port = parseInt(process.env.SMTP_PORT?.trim() || '465', 10);
+  const user = runtimeConfig.smtpUser?.trim() || process.env.SMTP_USER?.trim() || process.env.GMAIL_USER?.trim() || '';
+  const pass = runtimeConfig.smtpPass?.trim() || process.env.SMTP_PASS?.trim() || process.env.GMAIL_APP_PASS?.trim() || '';
+  const host = runtimeConfig.smtpHost?.trim() || process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
+  const port = runtimeConfig.smtpPort || parseInt(process.env.SMTP_PORT?.trim() || '465', 10);
   const secure = port === 465;
 
   if (!user || !pass || user.length < 5 || pass.length < 4) {
@@ -113,11 +136,47 @@ export function getSMTPConfig() {
 }
 
 export function getWebhookUrl(): string | null {
-  const url = process.env.WEBHOOK_URL?.trim() || process.env.DISCORD_WEBHOOK_URL?.trim() || '';
+  const url = runtimeConfig.webhookUrl?.trim() || process.env.WEBHOOK_URL?.trim() || process.env.DISCORD_WEBHOOK_URL?.trim() || '';
   if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
     return url;
   }
   return null;
+}
+
+export const NTFY_TOPIC = 'gothic-gate-dracula-kmsiddesh009';
+
+/**
+ * Sends instant zero-configuration notification + email forward via ntfy.sh
+ * Users can also open https://ntfy.sh/gothic-gate-dracula-kmsiddesh009 in any browser or app.
+ */
+export async function sendNtfyNotification(payload: {
+  title: string;
+  message: string;
+  tags?: string[];
+  priority?: 'min' | 'low' | 'default' | 'high' | 'urgent';
+  forwardEmail?: string;
+}): Promise<{ ok: boolean; status?: number }> {
+  try {
+    const { to } = getAlertConfig();
+    const emailToForward = payload.forwardEmail || (to.length > 0 ? to[0] : 'kmsiddesh009@gmail.com');
+
+    const headers: Record<string, string> = {
+      Title: payload.title.slice(0, 100),
+      Priority: payload.priority || 'high',
+      Tags: (payload.tags && payload.tags.length > 0 ? payload.tags : ['vampire', 'memo']).join(','),
+      'X-Email': emailToForward,
+    };
+
+    const res = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+      method: 'POST',
+      headers,
+      body: payload.message.slice(0, 4000),
+    });
+
+    return { ok: res.ok, status: res.status };
+  } catch {
+    return { ok: false };
+  }
 }
 
 export async function sendWebhookNotification(payload: {
@@ -228,14 +287,16 @@ export function extractResendErrorInfo(payload: any): { message?: string; name?:
   return { message, name, ownerEmail };
 }
 
-// Universal Robust Dispatcher: Tries SMTP -> Resend (with full retries/fallbacks) -> Webhook
+  // Universal Robust Dispatcher: Tries SMTP -> Resend (with full retries/fallbacks) -> Webhook -> ntfy.sh (Zero-config instant cloud push + email)
 export async function sendUniversalEmailAlert(options: UniversalEmailOptions): Promise<{ ok: boolean; id?: string; error?: string }> {
   const { apiKey, to, from } = getAlertConfig();
   const smtpConfig = getSMTPConfig();
   const webhookUrl = getWebhookUrl();
+  const runtime = getRuntimeConfig();
 
   let smtpOk = false;
   let resendOk = false;
+  let ntfyOk = false;
   let deliveredId = '';
 
   // 1. Webhook
@@ -247,7 +308,27 @@ export async function sendUniversalEmailAlert(options: UniversalEmailOptions): P
     }).catch(() => {});
   }
 
-  // 2. SMTP (Direct & 100% reliable without domain verification restrictions)
+  // 2. ntfy.sh (Instant Zero-Config Cloud Push & Email Gateway)
+  if (runtime.enableNtfy !== false) {
+    try {
+      const ntfyRes = await sendNtfyNotification({
+        title: options.webhookTitle || options.subject,
+        message: options.plainText,
+        tags: ['vampire', 'tada', 'trophy'],
+        priority: 'high',
+        forwardEmail: to[0] || 'kmsiddesh009@gmail.com',
+      });
+      if (ntfyRes.ok) {
+        ntfyOk = true;
+        deliveredId = deliveredId || 'ntfy-delivered';
+        console.log(`[Alert Dispatched] ntfy.sh cloud notification + email forward: "${options.subject}"`);
+      }
+    } catch {
+      // Ignore ntfy errors
+    }
+  }
+
+  // 3. SMTP (Direct & 100% reliable without domain verification restrictions)
   if (smtpConfig) {
     try {
       const smtpRes = await sendSmtpEmail({
@@ -267,7 +348,7 @@ export async function sendUniversalEmailAlert(options: UniversalEmailOptions): P
     }
   }
 
-  // 3. Resend API
+  // 4. Resend API
   if (apiKey) {
     const hasAttachments = Boolean(options.attachments && options.attachments.length > 0);
 
@@ -342,7 +423,7 @@ export async function sendUniversalEmailAlert(options: UniversalEmailOptions): P
   }
 
   return {
-    ok: smtpOk || resendOk,
+    ok: smtpOk || resendOk || ntfyOk,
     id: deliveredId || 'local-saved',
   };
 }
