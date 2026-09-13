@@ -123,9 +123,19 @@ export function getAlertConfig() {
 }
 
 export function getSMTPConfig() {
-  const user = runtimeConfig.smtpUser?.trim() || process.env.SMTP_USER?.trim() || process.env.GMAIL_USER?.trim() || '';
-  const pass = runtimeConfig.smtpPass?.trim() || process.env.SMTP_PASS?.trim() || process.env.GMAIL_APP_PASS?.trim() || '';
-  const host = runtimeConfig.smtpHost?.trim() || process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
+  const user = (runtimeConfig.smtpUser?.trim() || process.env.SMTP_USER?.trim() || process.env.GMAIL_USER?.trim() || process.env.EMAIL_USER?.trim() || '').trim();
+  let pass = (runtimeConfig.smtpPass?.trim() || process.env.SMTP_PASS?.trim() || process.env.GMAIL_APP_PASS?.trim() || process.env.EMAIL_PASS?.trim() || '').trim();
+
+  // Strip all whitespaces from password (crucial for 16-character Gmail App Passwords often copied with spaces)
+  pass = pass.replace(/\s+/g, '');
+
+  const isPlaceholder = pass === 'your-16-char-gmail-app-password' || pass === 'MY_SMTP_PASS' || pass === 'SMTP_PASS' || pass === 'your_app_password_here';
+  if (isPlaceholder) {
+    return null;
+  }
+
+  const isGmail = user.toLowerCase().includes('@gmail.com');
+  const host = runtimeConfig.smtpHost?.trim() || process.env.SMTP_HOST?.trim() || (isGmail ? 'smtp.gmail.com' : 'smtp.gmail.com');
   const port = runtimeConfig.smtpPort || parseInt(process.env.SMTP_PORT?.trim() || '465', 10);
   const secure = port === 465;
 
@@ -133,6 +143,54 @@ export function getSMTPConfig() {
     return null;
   }
   return { user, pass, host, port, secure };
+}
+
+export function createNodemailerTransporter(config: NonNullable<ReturnType<typeof getSMTPConfig>>) {
+  const isPort465 = config.port === 465;
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    requireTLS: !isPort465,
+    auth: {
+      user: config.user,
+      pass: config.pass,
+    },
+    connectionTimeout: 15000, // 15s connection timeout for cloud containers
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
+    tls: {
+      rejectUnauthorized: false, // Ensures SSL handshakes succeed in sandboxed environments
+    },
+  });
+}
+
+export async function verifySmtpConnection(): Promise<{ ok: boolean; error?: string; host?: string; port?: number; user?: string }> {
+  const config = getSMTPConfig();
+  if (!config) {
+    return { ok: false, error: 'No SMTP credentials configured. Enter Gmail user and 16-character App Password.' };
+  }
+
+  try {
+    const transporter = createNodemailerTransporter(config);
+    await transporter.verify();
+    return {
+      ok: true,
+      host: config.host,
+      port: config.port,
+      user: config.user,
+    };
+  } catch (err: any) {
+    const errorMsg = err?.message || 'Failed to authenticate with SMTP server';
+    console.warn('[SMTP Verification Error]:', errorMsg);
+    return {
+      ok: false,
+      error: errorMsg,
+      host: config.host,
+      port: config.port,
+      user: config.user,
+    };
+  }
 }
 
 export function getWebhookUrl(): string | null {
@@ -236,39 +294,35 @@ export async function sendSmtpEmail(options: {
 }): Promise<{ ok: boolean; messageId?: string; error?: string }> {
   const config = getSMTPConfig();
   if (!config) {
-    return { ok: false, error: 'SMTP credentials not configured.' };
+    return { ok: false, error: 'SMTP credentials not configured (Requires SMTP_USER & SMTP_PASS).' };
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: config.host,
-      port: config.port,
-      secure: config.secure,
-      auth: {
-        user: config.user,
-        pass: config.pass,
-      },
-    });
+    const transporter = createNodemailerTransporter(config);
 
     const mailOptions: any = {
       from: `"Gothic Gatekeeper" <${config.user}>`,
       to: options.to.join(', '),
-      subject: options.subject,
+      subject: options.subject.replace(/[\r\n\t]+/g, ' ').trim(),
       text: options.text,
       html: options.html,
     };
 
     if (options.attachments && options.attachments.length > 0) {
       mailOptions.attachments = options.attachments.map((a) => ({
-        filename: a.filename,
-        content: Buffer.from(a.content, 'base64'),
+        filename: String(a.filename || 'recording.webm').replace(/[^a-zA-Z0-9._-]/g, '_'),
+        content: Buffer.from(stripDataUrl(a.content) || a.content, 'base64'),
+        contentType: a.filename?.endsWith('.mp3') ? 'audio/mpeg' : 'audio/webm',
       }));
     }
 
     const info = await transporter.sendMail(mailOptions);
+    console.log(`[SMTP Direct Dispatch] Success! Message ID: ${info.messageId} delivered to: ${options.to.join(', ')}`);
     return { ok: true, messageId: info.messageId };
   } catch (err: any) {
-    return { ok: false, error: err?.message || 'SMTP error' };
+    const errorMsg = err?.message || 'SMTP sending failed';
+    console.warn(`[SMTP Delivery Warning]: ${errorMsg}`);
+    return { ok: false, error: errorMsg };
   }
 }
 

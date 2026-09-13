@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { Volume2, VolumeX, Zap, User } from 'lucide-react';
+import { Volume2, VolumeX, Zap, User, RotateCcw } from 'lucide-react';
 import { soundEngine } from '../utils/soundEngine';
 
 interface AudioControlProps {
   onManualLightning: () => void;
   visitorName: string;
   onOpenVisitorModal: () => void;
+  onResetAll?: () => void;
 }
 
 export const AudioControl: React.FC<AudioControlProps> = ({
   onManualLightning,
   visitorName,
   onOpenVisitorModal,
+  onResetAll,
 }) => {
   const [isMuted, setIsMuted] = useState(soundEngine.getMuted());
 
@@ -26,7 +28,7 @@ export const AudioControl: React.FC<AudioControlProps> = ({
 
   return (
     <div className="fixed top-4 left-4 right-4 z-40 flex items-center justify-between pointer-events-none select-none">
-      {/* Left side: Visitor Identity (Records button removed from UI, stored directly to DB & emailed) */}
+      {/* Left side: Visitor Identity */}
       <div className="flex items-center gap-2 pointer-events-auto">
         <button
           type="button"
@@ -39,6 +41,18 @@ export const AudioControl: React.FC<AudioControlProps> = ({
             {visitorName || 'Visitor'}
           </span>
         </button>
+
+        {onResetAll && (
+          <button
+            type="button"
+            onClick={onResetAll}
+            className="px-2.5 py-2 rounded-xl bg-[#091524]/85 hover:bg-rose-950/60 border border-slate-700/60 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.6)] backdrop-blur-md flex items-center gap-1.5 text-xs font-cinzel tracking-wider cursor-pointer"
+            title="Reset All Progress & Restart from Chapter 1 Entrance"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+            <span className="hidden sm:inline text-[11px]">Start Over</span>
+          </button>
+        )}
       </div>
 
       {/* Right side: Sound & Lightning Controls */}

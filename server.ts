@@ -26,6 +26,7 @@ import {
   sendResetAlertEmail,
   sendAnswerAlertEmail,
   sendSmtpEmail,
+  verifySmtpConnection,
   sendWebhookNotification,
   extractResendErrorInfo,
 } from './server/emailAlerts';
@@ -343,7 +344,7 @@ app.post('/api/visitor/session', (req, res) => {
     existing.email = email?.trim() || existing.email;
 
     if (isNameChanged) {
-      void sendLoginAlertEmail(existing, true);
+      sendLoginAlertEmail(existing, true).catch((err) => console.error('[Alert Notice] sendLoginAlertEmail update error:', err?.message || err));
     }
 
     return res.json({ success: true, session: sanitizeSession(existing) });
@@ -363,7 +364,7 @@ app.post('/api/visitor/session', (req, res) => {
 
   visitorSessionsMap.set(sessionId, newSession);
   console.log(`[Visitor Store] Registered login for: "${newSession.userName}" (${sessionId})`);
-  void sendLoginAlertEmail(newSession, false);
+  sendLoginAlertEmail(newSession, false).catch((err) => console.error('[Alert Notice] sendLoginAlertEmail new login error:', err?.message || err));
 
   return res.json({ success: true, session: sanitizeSession(newSession) });
 });
@@ -378,7 +379,7 @@ app.post('/api/visitor/reset', (req, res) => {
   const session = visitorSessionsMap.get(sessionId);
   if (session) {
     console.log(`[Visitor Store] Reset/restart triggered for "${session.userName}" at ${stageName || 'Entrance'}`);
-    void sendResetAlertEmail(session, stageName || 'Entrance');
+    sendResetAlertEmail(session, stageName || 'Entrance').catch((err) => console.error('[Alert Notice] sendResetAlertEmail error:', err?.message || err));
   }
 
   return res.json({ success: true });
@@ -455,7 +456,7 @@ app.post('/api/visitor/record-answer', (req, res) => {
   console.log(`[Visitor Store] Saved answer for "${session.userName}" - Q${qNum} (${questionId}): "${answerRecord.answer.slice(0, 40)}" (audio: ${hasAudio ? 'yes' : 'no'})`);
   
   // Instant per-answer email dispatch
-  void sendAnswerAlertEmail(session, answerRecord);
+  sendAnswerAlertEmail(session, answerRecord).catch((err) => console.error('[Alert Notice] sendAnswerAlertEmail error:', err?.message || err));
 
   return res.json({ success: true, answer: sanitizeAnswer(answerRecord), totalAnswers: session.answers.length });
 });
@@ -512,14 +513,14 @@ app.post('/api/puzzle/complete', (req, res) => {
   console.log(`[Puzzle Attempt] "${session.userName}" - ${modeLabel} Attempt #${attemptNumber || 1} result: ${isSolved ? 'SOLVED' : 'TIMEOUT'}`);
   
   // Send dedicated Chapter II Puzzle Solved alert email
-  void sendPuzzleCompleteEmail(session, {
+  sendPuzzleCompleteEmail(session, {
     moves: Number(moves) || 0,
     timeTakenSeconds: Number(timeTakenSeconds) || 0,
     timeRemainingSeconds: Number(timeRemainingSeconds) || 0,
     puzzleMode: mode,
     attemptNumber: Number(attemptNumber) || 1,
     isSolved,
-  });
+  }).catch((err) => console.error('[Alert Notice] sendPuzzleCompleteEmail error:', err?.message || err));
 
   return res.json({ success: true, record: sanitizeAnswer(puzzleRecord) });
 });
@@ -568,11 +569,11 @@ app.post('/api/wake-dracula/complete', (req, res) => {
   console.log(`[Wake Dracula] "${session.userName}" successfully awakened Dracula in ${timeTakenSeconds}s.`);
 
   // Send dedicated Chapter III Dracula Awakened alert email
-  void sendWakeDraculaCompleteEmail(session, {
+  sendWakeDraculaCompleteEmail(session, {
     clicks: Number(clicks) || 20,
     timeTakenSeconds: Number(timeTakenSeconds) || 0,
     timeRemainingSeconds: Number(timeRemainingSeconds) || 0,
-  });
+  }).catch((err) => console.error('[Alert Notice] sendWakeDraculaCompleteEmail error:', err?.message || err));
 
   return res.json({ success: true, record: sanitizeAnswer(wakeRecord) });
 });
@@ -625,12 +626,12 @@ app.post('/api/quiz/mbbs-complete', (req, res) => {
   console.log(`[MBBS Quiz] "${session.userName}" finished MBBS quiz with score ${scoreNum}/${totalNum} (${percent}%).`);
 
   // Send dedicated MBBS Exam Results Email with all 10 questions breakdown
-  void sendMBBSQuizCompleteEmail(session, {
+  sendMBBSQuizCompleteEmail(session, {
     score: scoreNum,
     totalQuestions: totalNum,
     tierTitle: tierTitle || 'Dr. Dracula Board Certified',
     questions: Array.isArray(questions) ? questions : [],
-  });
+  }).catch((err) => console.error('[Alert Notice] sendMBBSQuizCompleteEmail error:', err?.message || err));
 
   return res.json({ success: true, record: sanitizeAnswer(mbbsRecord) });
 });
@@ -682,11 +683,11 @@ app.post('/api/quiz/couple-complete', (req, res) => {
   console.log(`[Couple Quiz] "${session.userName}" finished couple quiz (Dracula: ${dCount}, SK: ${sCount}).`);
 
   // Send dedicated Couple Quiz Results Email with all 10 questions breakdown
-  void sendCoupleQuizCompleteEmail(session, {
+  sendCoupleQuizCompleteEmail(session, {
     draculaCount: dCount,
     skCount: sCount,
     questions: Array.isArray(questions) ? questions : [],
-  });
+  }).catch((err) => console.error('[Alert Notice] sendCoupleQuizCompleteEmail error:', err?.message || err));
 
   return res.json({ success: true, record: sanitizeAnswer(coupleRecord) });
 });
@@ -744,6 +745,22 @@ app.get('/api/visitor/records', (_req, res) => {
     .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 
   return res.json({ success: true, count: records.length, records });
+});
+
+// Reset single session or current user session
+app.post('/api/visitor/reset', (req, res) => {
+  const { sessionId } = req.body ?? {};
+  if (sessionId && visitorSessionsMap.has(sessionId)) {
+    visitorSessionsMap.delete(sessionId);
+  }
+  return res.json({ success: true, message: 'Session reset successfully' });
+});
+
+// Reset ALL visitor records and sessions completely
+app.post('/api/visitor/reset-all', (_req, res) => {
+  visitorSessionsMap.clear();
+  console.log('[Visitor Store] All visitor records and sessions have been cleared.');
+  return res.json({ success: true, message: 'All visitor records and sessions have been cleared.' });
 });
 
 // Stream audio for a recorded answer
@@ -886,6 +903,24 @@ app.post('/api/admin/config', (req, res) => {
     resendConfigured: Boolean(apiKey && apiKey.length > 5),
     webhookConfigured: Boolean(wh),
     ntfyTopic: NTFY_TOPIC,
+  });
+});
+
+// Verify SMTP server credentials and connectivity
+app.post('/api/admin/verify-smtp', async (_req, res) => {
+  const smtpConfig = getSMTPConfig();
+  if (!smtpConfig) {
+    return res.json({
+      ok: false,
+      configured: false,
+      error: 'SMTP credentials not configured. Please enter your Gmail address and 16-character App Password.',
+    });
+  }
+
+  const verification = await verifySmtpConnection();
+  return res.json({
+    ...verification,
+    configured: true,
   });
 });
 

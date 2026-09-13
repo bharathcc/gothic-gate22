@@ -284,6 +284,48 @@ export default function App() {
     setRejectionMessage(null);
   };
 
+  const handleFullReset = async () => {
+    try {
+      // Clear server records
+      await fetch('/api/visitor/reset-all', { method: 'POST' }).catch(() => null);
+    } catch {}
+
+    try {
+      // Clear client storage
+      localStorage.removeItem('gothic-visitor-user');
+      localStorage.removeItem('gothic-entrance-session-id');
+      localStorage.removeItem('gothic_puzzle_unlocked');
+      localStorage.removeItem('gothic_puzzle_state');
+      localStorage.removeItem('gothic_treasure_state');
+    } catch {}
+
+    // Generate fresh session ID
+    const newId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    sessionIdRef.current = newId;
+    attemptCountRef.current = 0;
+    try {
+      localStorage.setItem('gothic-entrance-session-id', newId);
+    } catch {}
+
+    const freshUser: VisitorUser = { id: newId, name: 'Mortal Visitor', loginTime: new Date().toISOString() };
+    setVisitorUser(freshUser);
+    setCurrentPage('entrance');
+    setIsIntroCompleted(false);
+    setIsSuccessTransition(false);
+    setRejectionMessage(null);
+    setIsSinging(false);
+
+    // Register clean session
+    void fetch('/api/visitor/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: newId,
+        userName: freshUser.name,
+      }),
+    });
+  };
+
   const handleRestartQuiz = () => {
     // Notify server of quiz replay/restart
     if (sessionIdRef.current) {
@@ -396,6 +438,7 @@ export default function App() {
         onManualLightning={triggerLightning}
         visitorName={visitorUser.name}
         onOpenVisitorModal={() => setIsVisitorModalOpen(true)}
+        onResetAll={handleFullReset}
       />
 
       {/* 3. Center Entrance Challenge & Riddle Panel / Secret Door Intro */}
@@ -440,6 +483,7 @@ export default function App() {
       <AdminPortal
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}
+        onResetApp={handleFullReset}
       />
 
       {/* 7. Discreet Admin Trigger (Click to open dossier/email control) */}

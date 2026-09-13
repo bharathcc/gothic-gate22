@@ -62,13 +62,15 @@ interface VisitorSession {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  onResetApp?: () => void;
 }
 
-export const AdminPortal: React.FC<Props> = ({ isOpen, onClose }) => {
+export const AdminPortal: React.FC<Props> = ({ isOpen, onClose, onResetApp }) => {
   const [status, setStatus] = useState<DeliveryStatus | null>(null);
   const [sessions, setSessions] = useState<VisitorSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [testOutput, setTestOutput] = useState<any>(null);
   const [selectedSession, setSelectedSession] = useState<VisitorSession | null>(null);
   const [activeTab, setActiveTab] = useState<'status' | 'config' | 'visitors' | 'guide'>('status');
@@ -158,6 +160,47 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onClose }) => {
       setSaveStatus(`❌ Network error: ${err?.message}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const [isVerifyingSmtp, setIsVerifyingSmtp] = useState(false);
+  const [smtpVerifyResult, setSmtpVerifyResult] = useState<{ ok?: boolean; error?: string; message?: string } | null>(null);
+
+  const handleVerifySmtp = async () => {
+    setIsVerifyingSmtp(true);
+    setSmtpVerifyResult(null);
+    try {
+      const res = await fetch('/api/admin/verify-smtp', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setSmtpVerifyResult({ ok: true, message: `✅ SMTP connection verified! Connected successfully to ${data.host || 'smtp.gmail.com'}:${data.port || 465} as ${data.user || 'configured user'}.` });
+      } else {
+        setSmtpVerifyResult({ ok: false, error: data.error || 'Failed to authenticate with SMTP server. Check email and 16-character App Password.' });
+      }
+    } catch (err: any) {
+      setSmtpVerifyResult({ ok: false, error: `Network error: ${err?.message || err}` });
+    } finally {
+      setIsVerifyingSmtp(false);
+    }
+  };
+
+  const handleResetSessions = async () => {
+    if (!window.confirm('Reset all visitor records and restart the quest from Chapter 1 / Entrance?')) {
+      return;
+    }
+    setIsResetting(true);
+    try {
+      await fetch('/api/visitor/reset-all', { method: 'POST' });
+      setSessions([]);
+      setSelectedSession(null);
+      if (onResetApp) {
+        onResetApp();
+      }
+      onClose();
+    } catch (err) {
+      console.error('Reset failed:', err);
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -427,16 +470,33 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onClose }) => {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between pt-2">
+                {smtpVerifyResult && (
+                  <div className={`p-3 border rounded-lg text-xs font-medium ${smtpVerifyResult.ok ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200' : 'bg-rose-950/40 border-rose-500/50 text-rose-200'}`}>
+                    {smtpVerifyResult.ok ? smtpVerifyResult.message : `❌ ${smtpVerifyResult.error}`}
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
                   <span className="text-xs text-slate-400">Settings take effect immediately for all subsequent quiz attempts.</span>
-                  <button
-                    type="submit"
-                    disabled={isSaving}
-                    className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow transition-all flex items-center gap-2"
-                  >
-                    {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                    Save Email Credentials
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleVerifySmtp}
+                      disabled={isVerifyingSmtp || isSaving}
+                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition-all flex items-center gap-1.5"
+                    >
+                      {isVerifyingSmtp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5 text-sky-400" />}
+                      Verify Connection
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow transition-all flex items-center gap-2"
+                    >
+                      {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                      Save Email Credentials
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
@@ -573,11 +633,23 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-slate-800 bg-slate-950/70 flex justify-between items-center text-xs text-slate-400">
-          <span>Target Recipient: <strong className="text-slate-200">{alertEmailTo}</strong></span>
+        <div className="px-6 py-3 border-t border-slate-800 bg-slate-950/70 flex flex-wrap justify-between items-center gap-3 text-xs text-slate-400">
+          <div className="flex items-center gap-3">
+            <span>Target Recipient: <strong className="text-slate-200">{alertEmailTo}</strong></span>
+            <button
+              type="button"
+              onClick={handleResetSessions}
+              disabled={isResetting}
+              className="px-3 py-1 bg-red-950/80 hover:bg-red-900 border border-red-700/60 text-red-200 rounded-md transition-colors font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Clear all stored records and restart the quest from Chapter 1"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
+              <span>Reset All & Start Over</span>
+            </button>
+          </div>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors font-medium"
+            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors font-medium cursor-pointer"
           >
             Close Panel
           </button>
