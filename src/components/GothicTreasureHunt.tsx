@@ -13,7 +13,6 @@ import {
   Clock,
   Moon,
   Gift,
-  Heart,
   ChevronRight,
   HelpCircle,
   Volume2,
