@@ -1064,33 +1064,19 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
           {/* ========================================================================= */}
           {/* NASA HUBBLE COSMIC BIRTHDAY SURPRISE */}
           {/* ========================================================================= */}
-          <div className="mt-8 sm:mt-10 w-full max-w-lg mx-auto p-5 sm:p-6 rounded-3xl bg-gradient-to-b from-indigo-950/80 via-purple-950/70 to-slate-950/85 backdrop-blur-xl border border-indigo-400/30 shadow-[0_12px_40px_rgba(79,70,229,0.25)] flex flex-col items-center text-center space-y-3 relative overflow-hidden group">
-            {/* Ambient Star Sparkles Background */}
-            <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-pink-500/20 rounded-full blur-2xl pointer-events-none" />
-
-            <div className="flex items-center gap-2 text-indigo-300 text-xs sm:text-sm font-semibold tracking-wider uppercase">
-              <Telescope className="w-4 h-4 text-amber-300 animate-pulse" />
-              <span>Cosmic Birthday Wonder 🌌</span>
-              <Star className="w-4 h-4 text-amber-300 animate-pulse" />
-            </div>
-
-            <p className="font-cinzel text-base sm:text-lg font-bold text-white tracking-wide">
-              Do you want to know which picture was captured by NASA on your birthday? 🚀✨
-            </p>
-
-            <p className="text-xs sm:text-sm text-indigo-200/80 max-w-md leading-relaxed">
-              Hubble explores the universe 24 hours a day, 365 days a year. Discover the breathtaking celestial wonder NASA captured on your special day!
+          <div className="mt-8 sm:mt-10 w-full max-w-md mx-auto p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-indigo-950/80 via-purple-950/70 to-slate-950/85 backdrop-blur-xl border border-indigo-400/30 shadow-[0_8px_30px_rgba(79,70,229,0.25)] flex flex-col items-center text-center space-y-3 relative overflow-hidden group">
+            <p className="font-cinzel text-sm sm:text-base font-bold text-white tracking-wide">
+              Do you want to know which picture was captured by NASA on your birthday? 🌌✨
             </p>
 
             <a
               href="https://science.nasa.gov/specials/apps/what-did-hubble-see-on-your-birthday/"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-cinzel text-xs sm:text-sm font-bold tracking-[0.14em] uppercase shadow-[0_4px_20px_rgba(168,85,247,0.4)] hover:shadow-[0_6px_25px_rgba(168,85,247,0.6)] hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-cinzel text-xs sm:text-sm font-bold tracking-[0.14em] uppercase shadow-[0_4px_16px_rgba(168,85,247,0.4)] hover:shadow-[0_6px_22px_rgba(168,85,247,0.6)] hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
             >
               <Telescope className="w-4 h-4 text-amber-200" />
-              <span>What Did NASA Capture On Your Birthday?</span>
+              <span>What Did Hubble See On Your Birthday?</span>
               <ExternalLink className="w-3.5 h-3.5 opacity-80" />
             </a>
           </div>

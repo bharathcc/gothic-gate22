@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Sparkles, RotateCcw, Volume2, VolumeX, ChevronLeft, Eye, Telescope, ExternalLink } from 'lucide-react';
+import { Sparkles, RotateCcw, Volume2, VolumeX, ChevronLeft, Eye } from 'lucide-react';
 import { soundEngine } from '../utils/soundEngine';
 import { birthdayMusicPlayer } from '../utils/birthdayMusic';
 import { VisitorUser } from '../types';
@@ -56,20 +56,20 @@ export const FinalBirthdayPage: React.FC<FinalBirthdayPageProps> = ({
     window.addEventListener('touchstart', handleFirstGesture, { once: true, passive: true });
 
     // Slow, majestic, cinematic entrance sequence:
-    // Phase 1 (1400ms): "HAPPY BIRTHDAY" gently unfolds with glowing letters
+    // Phase 1 (1200ms): "HAPPY BIRTHDAY" gently unfolds with glowing letters (takes ~2.5s)
     const t1 = setTimeout(() => {
       setShowHappyBirthday(true);
-    }, 1400);
+    }, 1200);
 
-    // Phase 2 (4000ms): "DRACULA" grandly glides in with royal sparkle luminance
+    // Phase 2 (4000ms): "DRACULA" grandly glides in with royal sparkle luminance (takes ~3s)
     const t2 = setTimeout(() => {
       setShowDracula(true);
     }, 4000);
 
-    // Phase 3 (6800ms): Cake cutting challenge gracefully emerges
+    // Phase 3 (7600ms): OPEN button is revealed ONLY AFTER "HAPPY BIRTHDAY DRACULA" completely finishes its animation
     const t3 = setTimeout(() => {
       setShowSurprisePrompt(true);
-    }, 6800);
+    }, 7600);
 
     return () => {
       clearTimeout(t1);
@@ -292,17 +292,6 @@ export const FinalBirthdayPage: React.FC<FinalBirthdayPageProps> = ({
             <span>Open Photos Journey</span>
           </button>
         )}
-
-        <a
-          href="https://science.nasa.gov/specials/apps/what-did-hubble-see-on-your-birthday/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-400/50 text-indigo-200 hover:text-white font-cinzel text-xs font-semibold tracking-[0.14em] uppercase shadow-sm hover:shadow-md transition-all duration-300 backdrop-blur-sm cursor-pointer hover:scale-105 active:scale-95"
-        >
-          <Telescope className="w-3.5 h-3.5 text-amber-300" />
-          <span>NASA Birthday Picture</span>
-          <ExternalLink className="w-3 h-3 opacity-70" />
-        </a>
 
         {onRestartQuiz && (
           <button

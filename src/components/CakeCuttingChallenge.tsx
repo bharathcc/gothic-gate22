@@ -33,16 +33,15 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
   const lastOpenDodgeTimeRef = useRef<number>(0);
   const openToastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const MAX_OPEN_DODGES = 7;
+  const MAX_OPEN_DODGES = 5;
 
   const OPEN_DODGE_OFFSETS = [
-    { x: -75, y: -25, msg: 'Nope! 😜' },
-    { x: 80, y: 20, msg: 'Too slow! 😂' },
-    { x: -65, y: 28, msg: 'Almost! 🏃‍♂️' },
-    { x: 70, y: -22, msg: 'Nice try! 😏' },
-    { x: -80, y: 15, msg: 'Over here! 💨' },
-    { x: 65, y: 26, msg: 'Still too slow! 🤭' },
-    { x: -50, y: -18, msg: 'One more try! 😂' },
+    { x: -90, y: -30, msg: 'Nope! 😜' },
+    { x: 95, y: 25, msg: 'Too slow! 😂' },
+    { x: -80, y: 35, msg: 'Almost! 🏃‍♂️' },
+    { x: 85, y: -30, msg: 'Nice try! 😏' },
+    { x: -95, y: 15, msg: 'Over here! 💨' },
+    { x: 75, y: 30, msg: 'Still too slow! 🤭' },
   ];
 
   // Perform Open Button Dodge
@@ -50,7 +49,7 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
     if (isCatchable || isOpening || stage !== 'open_button') return;
 
     const now = Date.now();
-    if (now - lastOpenDodgeTimeRef.current < 280) return;
+    if (now - lastOpenDodgeTimeRef.current < 200) return;
     lastOpenDodgeTimeRef.current = now;
 
     soundEngine.playCakeDodge();
@@ -69,14 +68,14 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
     const nextCount = openDodgeCount + 1;
     setOpenDodgeCount(nextCount);
 
-    // After 7 dodges, make button stay still and easy to catch
+    // After 5 dodges, make button stay still and easy to catch
     if (nextCount >= MAX_OPEN_DODGES) {
       setTimeout(() => {
         setIsCatchable(true);
         setOpenBtnOffset({ x: 0, y: 0 });
         setOpenToastMsg('Okay, click me now! 😂');
-        setTimeout(() => setOpenToastMsg(null), 1800);
-      }, 350);
+        setTimeout(() => setOpenToastMsg(null), 2000);
+      }, 300);
     }
   }, [openDodgeCount, isCatchable, isOpening, stage]);
 
@@ -89,8 +88,8 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
 
     const dist = Math.hypot(e.clientX - btnCenterX, e.clientY - btnCenterY);
 
-    // When cursor gets close to the OPEN button (< 70px)
-    if (dist < 70) {
+    // When cursor gets close to the OPEN button (< 80px)
+    if (dist < 80) {
       triggerOpenDodge();
     }
   };
@@ -99,13 +98,21 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
   const handleOpenTouchStart = (e: React.TouchEvent<HTMLButtonElement>) => {
     if (!isCatchable && !isOpening) {
       e.preventDefault();
+      e.stopPropagation();
       triggerOpenDodge();
     }
   };
 
   // User successfully catches / clicks OPEN button
-  const handleOpenClick = () => {
+  const handleOpenClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (isOpening) return;
+    if (!isCatchable) {
+      e.preventDefault();
+      e.stopPropagation();
+      triggerOpenDodge();
+      return;
+    }
+
     setIsOpening(true);
     soundEngine.playHoverTone();
 
@@ -331,6 +338,12 @@ export const CakeCuttingChallenge: React.FC<CakeCuttingChallengeProps> = ({
               id="btn-open-surprise"
               onClick={handleOpenClick}
               onTouchStart={handleOpenTouchStart}
+              onPointerDown={(e) => {
+                if (!isCatchable && !isOpening) {
+                  e.preventDefault();
+                  triggerOpenDodge();
+                }
+              }}
               onMouseEnter={() => {
                 if (!isCatchable && !isOpening) triggerOpenDodge();
               }}

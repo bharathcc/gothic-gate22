@@ -1,19 +1,26 @@
 /**
  * Soft Music-Box / Celesta Birthday Music Synthesizer
  * Plays a warm, sweet, gentle rendition of "Happy Birthday" using Web Audio API
- * Runs only after the user clicks [ OPEN ]
+ * Ensures strictly SINGLE-INSTANCE playback with no overlapping duplicate melodies.
  */
+
+interface ActiveVoice {
+  osc: OscillatorNode;
+  overtone: OscillatorNode;
+  gain: GainNode;
+  overtoneGain: GainNode;
+  stopTime: number;
+}
 
 class BirthdayMusicPlayer {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private isPlaying: boolean = false;
   private isMuted: boolean = false;
-  private timeoutIds: number[] = [];
   private loopInterval: number | null = null;
+  private activeVoices: ActiveVoice[] = [];
 
   // Notes in Hz for Happy Birthday melody in C / F major with soft sweet voicing
-  // C4, D4, E4, F4, G4, A4, Bb4, B4, C5, D5, E5, F5
   private notes: { [key: string]: number } = {
     C4: 261.63,
     D4: 293.66,
@@ -111,18 +118,44 @@ class BirthdayMusicPlayer {
       gain.connect(this.masterGain);
       overtoneGain.connect(this.masterGain);
 
+      const stopTime = startTime + duration + 0.9;
       osc.start(startTime);
       overtone.start(startTime);
-      osc.stop(startTime + duration + 0.9);
-      overtone.stop(startTime + duration + 0.9);
+      osc.stop(stopTime);
+      overtone.stop(stopTime);
+
+      this.activeVoices.push({ osc, overtone, gain, overtoneGain, stopTime });
     } catch {
-      // Ignore audio synthesis errors
+      // Ignore synthesis errors
     }
+  }
+
+  private cleanFinishedVoices() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.activeVoices = this.activeVoices.filter((v) => v.stopTime > now);
+  }
+
+  private stopAllVoices() {
+    this.activeVoices.forEach((v) => {
+      try {
+        v.osc.stop();
+        v.overtone.stop();
+        v.osc.disconnect();
+        v.overtone.disconnect();
+        v.gain.disconnect();
+        v.overtoneGain.disconnect();
+      } catch {
+        // Already stopped/disconnected
+      }
+    });
+    this.activeVoices = [];
   }
 
   private playSequence() {
     if (!this.ctx || !this.isPlaying || this.isMuted) return;
 
+    this.cleanFinishedVoices();
     const baseTime = this.ctx.currentTime + 0.05;
 
     this.melody.forEach((item) => {
@@ -141,9 +174,18 @@ class BirthdayMusicPlayer {
     });
   }
 
-  public start() {
+  public start(forceRestart: boolean = false) {
     this.initAudio();
-    this.stop(); // Clear any existing
+
+    // If already actively playing and not forcing restart, don't double-schedule notes!
+    if (this.isPlaying && !forceRestart) {
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume();
+      }
+      return;
+    }
+
+    this.stop(); // Clear any existing intervals & voices
     this.isPlaying = true;
 
     if (this.masterGain && this.ctx) {
@@ -166,8 +208,7 @@ class BirthdayMusicPlayer {
       clearInterval(this.loopInterval);
       this.loopInterval = null;
     }
-    this.timeoutIds.forEach((id) => clearTimeout(id));
-    this.timeoutIds = [];
+    this.stopAllVoices();
   }
 
   public toggleMute(): boolean {
@@ -175,7 +216,7 @@ class BirthdayMusicPlayer {
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.35, this.ctx.currentTime, 0.1);
     }
-    if (!this.isMuted && this.isPlaying) {
+    if (!this.isMuted && this.isPlaying && this.activeVoices.length === 0) {
       this.playSequence();
     }
     return this.isMuted;
