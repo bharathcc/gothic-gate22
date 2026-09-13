@@ -185,6 +185,12 @@ export const Page5CoupleQuiz: React.FC<Page5Props> = ({
   const [isNextReady, setIsNextReady] = useState<boolean>(false);
 
   const timeoutRefs = useRef<NodeJS.Timeout[]>([]);
+  const answeredCoupleRef = useRef<Array<{
+    questionNumber: number;
+    question: string;
+    choice: 'DRACULA' | 'SK';
+    feedback: string;
+  }>>([]);
 
   // Cleanup timeouts
   const clearTimeouts = () => {
@@ -233,6 +239,7 @@ export const Page5CoupleQuiz: React.FC<Page5Props> = ({
 
   // Start Quiz Handler
   const handleStartQuiz = () => {
+    answeredCoupleRef.current = [];
     soundEngine.playHoverTone();
     soundEngine.playHeartbeat();
     setCurrentIndex(0);
@@ -258,6 +265,15 @@ export const Page5CoupleQuiz: React.FC<Page5Props> = ({
       line1: fb.line1,
       line2: fb.line2 || '',
     });
+
+    if (q) {
+      answeredCoupleRef.current.push({
+        questionNumber: currentIndex + 1,
+        question: q.question,
+        choice,
+        feedback: `${fb.line1}${fb.line2 ? ` ${fb.line2}` : ''}`,
+      });
+    }
 
     if (sessionId && q) {
       void fetch('/api/visitor/record-answer', {
@@ -294,19 +310,19 @@ export const Page5CoupleQuiz: React.FC<Page5Props> = ({
       setIsNextReady(false);
     } else {
       // Completed all 10
+      const draculaCount = answeredCoupleRef.current.filter((a) => a.choice === 'DRACULA').length;
+      const skCount = answeredCoupleRef.current.filter((a) => a.choice === 'SK').length;
+
       if (sessionId) {
-        void fetch('/api/visitor/record-answer', {
+        // Send dedicated couple complete email with all 10 choices & reactions
+        void fetch('/api/quiz/couple-complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId,
-            questionId: 'page5_couple_summary',
-            questionNumber: 5,
-            questionTitle: 'Couple Edition Quiz Completed',
-            questionPrompt: 'Completed all 10 playful couple trivia questions.',
-            answer: 'All 10 questions answered! 100% matched vibe.',
-            method: 'typed',
-            isCorrect: true,
+            draculaCount,
+            skCount,
+            questions: answeredCoupleRef.current,
           }),
         });
       }

@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'CabiryBubble';
+  src: url('/fonts/CabiryBubbleHighlight.ttf') format('truetype'),
+       url('/fonts/CabiryBubbleHighlight.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     --gothic-bg: #03070d;
@@ -13,7 +22,7 @@
   body {
     background-color: #02050a;
     color: #cbd5e1;
-    font-family: 'Cormorant Garamond', serif;
+    font-family: 'CabiryBubble', 'Cinzel', 'Cormorant Garamond', cursive, serif;
     margin: 0;
     padding: 0;
     overflow-x: hidden;
@@ -32,12 +41,16 @@
   }
 }
 
+.font-bubble {
+  font-family: 'CabiryBubble', 'Cinzel Decorative', cursive, sans-serif;
+}
+
 .font-cinzel {
-  font-family: 'Cinzel', serif;
+  font-family: 'CabiryBubble', 'Cinzel Decorative', 'Cinzel', serif;
 }
 
 .font-cinzel-decorative {
-  font-family: 'Cinzel Decorative', serif;
+  font-family: 'CabiryBubble', 'Cinzel Decorative', 'Cinzel', serif;
 }
 
 .font-cormorant {

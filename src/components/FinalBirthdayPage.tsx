@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Sparkles, RotateCcw, Volume2, VolumeX, ChevronLeft, Eye } from 'lucide-react';
+import { Sparkles, RotateCcw, Volume2, VolumeX, ChevronLeft, Eye, Telescope, ExternalLink } from 'lucide-react';
 import { soundEngine } from '../utils/soundEngine';
 import { birthdayMusicPlayer } from '../utils/birthdayMusic';
 import { VisitorUser } from '../types';
@@ -29,6 +29,7 @@ export const FinalBirthdayPage: React.FC<FinalBirthdayPageProps> = ({
   const [isCakeCutComplete, setIsCakeCutComplete] = useState(false);
   const hasStartedMusicRef = useRef(false);
 
+  // Slow, grand, cinematic entrance sequence:
   useEffect(() => {
     // Attempt starting sweet birthday music immediately upon entering this page
     const tryPlayMusic = () => {
@@ -54,21 +55,21 @@ export const FinalBirthdayPage: React.FC<FinalBirthdayPageProps> = ({
     window.addEventListener('click', handleFirstGesture, { once: true, passive: true });
     window.addEventListener('touchstart', handleFirstGesture, { once: true, passive: true });
 
-    // Slow, cinematic, elegant entrance sequence:
-    // Phase 1 (800ms): "HAPPY BIRTHDAY" blossoms slowly with glowing letters
+    // Slow, majestic, cinematic entrance sequence:
+    // Phase 1 (1400ms): "HAPPY BIRTHDAY" gently unfolds with glowing letters
     const t1 = setTimeout(() => {
       setShowHappyBirthday(true);
-    }, 800);
+    }, 1400);
 
-    // Phase 2 (2800ms): "DRACULA" gently glides in with royal burgundy-rose luster
+    // Phase 2 (4000ms): "DRACULA" grandly glides in with royal sparkle luminance
     const t2 = setTimeout(() => {
       setShowDracula(true);
-    }, 2800);
+    }, 4000);
 
-    // Phase 3 (5200ms): Cake cutting challenge gracefully emerges
+    // Phase 3 (6800ms): Cake cutting challenge gracefully emerges
     const t3 = setTimeout(() => {
       setShowSurprisePrompt(true);
-    }, 5200);
+    }, 6800);
 
     return () => {
       clearTimeout(t1);
@@ -291,6 +292,17 @@ export const FinalBirthdayPage: React.FC<FinalBirthdayPageProps> = ({
             <span>Open Photos Journey</span>
           </button>
         )}
+
+        <a
+          href="https://science.nasa.gov/specials/apps/what-did-hubble-see-on-your-birthday/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-400/50 text-indigo-200 hover:text-white font-cinzel text-xs font-semibold tracking-[0.14em] uppercase shadow-sm hover:shadow-md transition-all duration-300 backdrop-blur-sm cursor-pointer hover:scale-105 active:scale-95"
+        >
+          <Telescope className="w-3.5 h-3.5 text-amber-300" />
+          <span>NASA Birthday Picture</span>
+          <ExternalLink className="w-3 h-3 opacity-70" />
+        </a>
 
         {onRestartQuiz && (
           <button

@@ -484,6 +484,14 @@ export const Page4Placeholder: React.FC<Page4Props> = ({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const introTimeoutRef = useRef<NodeJS.Timeout[]>([]);
   const isAnswerLockedRef = useRef<boolean>(false);
+  const answeredQuestionsRef = useRef<Array<{
+    questionNumber: number;
+    category: string;
+    prompt: string;
+    selectedOption: string;
+    correctAnswer: string;
+    isCorrect: boolean;
+  }>>([]);
 
   // Prepare shuffled questions once on quiz start and dynamically on every retry
   const [shuffledQuestions, setShuffledQuestions] = useState<ShuffledQuestion[]>([]);
@@ -628,6 +636,17 @@ export const Page4Placeholder: React.FC<Page4Props> = ({
     setIsTimeout(true);
 
     const currentQ = shuffledQuestions[currentIndex];
+    if (currentQ) {
+      answeredQuestionsRef.current.push({
+        questionNumber: currentIndex + 1,
+        category: currentQ.category,
+        prompt: currentQ.prompt,
+        selectedOption: '[TIMED OUT]',
+        correctAnswer: currentQ.correctText,
+        isCorrect: false,
+      });
+    }
+
     if (sessionId && currentQ) {
       void fetch('/api/visitor/record-answer', {
         method: 'POST',
@@ -652,6 +671,7 @@ export const Page4Placeholder: React.FC<Page4Props> = ({
   // Start Quiz Handler
   const handleStartQuiz = () => {
     initializeQuizQuestions();
+    answeredQuestionsRef.current = [];
     soundEngine.playHoverTone();
     soundEngine.playHeartbeat();
     setScore(0);
@@ -676,6 +696,17 @@ export const Page4Placeholder: React.FC<Page4Props> = ({
 
     const currentQ = shuffledQuestions[currentIndex];
     const isCorrect = option === currentQ.correctText;
+
+    if (currentQ) {
+      answeredQuestionsRef.current.push({
+        questionNumber: currentIndex + 1,
+        category: currentQ.category,
+        prompt: currentQ.prompt,
+        selectedOption: option,
+        correctAnswer: currentQ.correctText,
+        isCorrect,
+      });
+    }
 
     if (sessionId && currentQ) {
       void fetch('/api/visitor/record-answer', {
@@ -732,18 +763,17 @@ export const Page4Placeholder: React.FC<Page4Props> = ({
     if (sessionId) {
       const percentage = Math.round((score / 10) * 100);
       const tierTitle = score >= 9 ? 'Rank 1 Chief Surgeon' : score >= 7 ? 'Senior Resident (Dracula Approved)' : score >= 5 ? 'Junior Intern' : 'Emergency CPR Needed';
-      void fetch('/api/visitor/record-answer', {
+      
+      // Send dedicated complete exam breakdown with all 10 questions
+      void fetch('/api/quiz/mbbs-complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
-          questionId: 'page4_mbbs_summary',
-          questionNumber: 4,
-          questionTitle: 'Dr. Dracula MBBS Exam Summary',
-          questionPrompt: 'Completed all 10 randomized medical board questions.',
-          answer: `Total Score: ${score}/10 (${percentage}%) — Diagnosis: ${tierTitle}`,
-          method: 'typed',
-          isCorrect: score >= 5,
+          score,
+          totalQuestions: 10,
+          tierTitle,
+          questions: answeredQuestionsRef.current,
         }),
       });
     }

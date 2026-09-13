@@ -216,18 +216,14 @@ export const TreasureHuntPage: React.FC<TreasureHuntPageProps> = ({
     clearAllTimeouts();
 
     if (sessionId) {
-      void fetch('/api/visitor/record-answer', {
+      void fetch('/api/wake-dracula/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
-          questionId: 'page3_wake_dracula',
-          questionNumber: 3,
-          questionTitle: 'Wake Up Dracula Challenge',
-          questionPrompt: 'Click/poke Dracula 20 times within 20 seconds to awaken her and claim the Golden Castle Key.',
-          answer: `Dracula awakened with 20 clicks in ${20 - timeLeft}s (${timeLeft}s remaining). Golden Castle Key unsealed!`,
-          method: 'typed',
-          isCorrect: true,
+          clicks: 20,
+          timeTakenSeconds: 20 - timeLeft,
+          timeRemainingSeconds: timeLeft,
         }),
       });
     }

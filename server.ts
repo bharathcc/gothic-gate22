@@ -3,7 +3,28 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
-import nodemailer from 'nodemailer';
+import {
+  StoredAnswer,
+  StoredVisitorSession,
+  getAlertConfig,
+  getSMTPConfig,
+  getWebhookUrl,
+  escapeHtml,
+  stripDataUrl,
+  formatAttemptTime,
+  sendUniversalEmailAlert,
+  sendLoginAlertEmail,
+  sendPuzzleCompleteEmail,
+  sendWakeDraculaCompleteEmail,
+  sendMBBSQuizCompleteEmail,
+  sendCoupleQuizCompleteEmail,
+  sendCompletedDossierEmail,
+  sendResetAlertEmail,
+  sendAnswerAlertEmail,
+  sendSmtpEmail,
+  sendWebhookNotification,
+  extractResendErrorInfo,
+} from './server/emailAlerts';
 
 dotenv.config();
 
@@ -31,16 +52,6 @@ function getGenAI(): GoogleGenAI | null {
   return genAIClient;
 }
 
-function stripDataUrl(value: string): string {
-  if (!value || typeof value !== 'string') return '';
-  const comma = value.indexOf('base64,');
-  const raw = comma >= 0 ? value.slice(comma + 'base64,'.length) : value;
-  const cleaned = raw.replace(/[^A-Za-z0-9+/=]/g, '').trim();
-  if (!cleaned || cleaned.length < 50) return '';
-  const pad = cleaned.length % 4;
-  return pad === 0 ? cleaned : cleaned + '='.repeat(4 - pad);
-}
-
 function normalizeMimeType(value: string): string {
   const mime = String(value || 'audio/webm').split(';')[0].trim().toLowerCase();
   const supported = new Set([
@@ -51,15 +62,44 @@ function normalizeMimeType(value: string): string {
   return supported.has(mime) ? mime : 'audio/webm';
 }
 
+function safeAudioExtension(mimeType: string): string {
+  const mime = normalizeMimeType(mimeType);
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('mp4') || mime.includes('m4a')) return 'm4a';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return 'mp3';
+  if (mime.includes('wav')) return 'wav';
+  return 'webm';
+}
+
+// In-memory visitor session store
+const visitorSessionsMap = new Map<string, StoredVisitorSession>();
+
+function sanitizeAnswer(answer: StoredAnswer) {
+  return {
+    ...answer,
+    hasAudio: Boolean(answer.audioBase64 && answer.audioBase64.length > 200),
+    audioBase64: undefined,
+  };
+}
+
+function sanitizeSession(session: StoredVisitorSession) {
+  return {
+    ...session,
+    answers: session.answers.map(sanitizeAnswer),
+  };
+}
+
+// Health check endpoint
 app.get('/api/health', (_req, res) => {
   const key = process.env.GEMINI_API_KEY?.trim();
   res.json({
     status: 'ok',
-    transcriptionModel: 'gemini-3.7-flash',
+    transcriptionModel: 'gemini-2.5-flash',
     geminiConfigured: Boolean(key && key !== 'MY_GEMINI_API_KEY'),
   });
 });
 
+// Voice audio transcription endpoint
 app.post('/api/transcribe', async (req, res) => {
   try {
     const { audioBase64, mimeType } = req.body ?? {};
@@ -106,20 +146,10 @@ app.post('/api/transcribe', async (req, res) => {
       });
       transcript = result.text?.trim() || '';
     } catch (primaryErr: any) {
-      const errMsg = primaryErr?.message || '';
-      if (errMsg.toLowerCase().includes('api key') || errMsg.toLowerCase().includes('unauthorized')) {
-        console.warn('[Audio Transcribe] Gemini API key notice:', errMsg);
-        return res.status(200).json({
-          success: false,
-          isApiKeyInvalid: true,
-          error: 'Voice recognition API key notice. You may type your answer directly.',
-        });
-      }
-
-      console.warn('[Audio Transcribe] Trying fallback model gemini-3.7-flash...');
+      console.warn('[Audio Transcribe] Primary model notice:', primaryErr?.message || primaryErr);
       try {
         const fallbackResult = await ai.models.generateContent({
-          model: 'gemini-3.7-flash',
+          model: 'gemini-2.5-flash',
           contents: [
             {
               inlineData: {
@@ -134,7 +164,6 @@ app.post('/api/transcribe', async (req, res) => {
         });
         transcript = fallbackResult.text?.trim() || '';
       } catch (fallbackErr: any) {
-        console.warn('[Audio Transcribe] Voice fallback notice:', fallbackErr?.message || fallbackErr);
         return res.status(200).json({
           success: false,
           error: "We couldn't hear the answer clearly. Please sing it again or type it below.",
@@ -154,7 +183,7 @@ app.post('/api/transcribe', async (req, res) => {
 
     return res.json({ success: true, transcript: cleanedTranscript });
   } catch (error: any) {
-    console.warn('[Audio Transcribe] transcription notice:', error?.message || error);
+    console.warn('[Audio Transcribe] notice:', error?.message || error);
     return res.status(200).json({
       success: false,
       error: 'Voice recognition could not process the recording. You can type your answer directly.',
@@ -162,274 +191,9 @@ app.post('/api/transcribe', async (req, res) => {
   }
 });
 
-
-function extractResendErrorInfo(payload: any): { name: string; message: string; ownerEmail?: string } {
-  if (!payload) {
-    return { name: 'unknown_error', message: 'No response from email service' };
-  }
-
-  const errObj = payload.error || payload;
-  const name = String(errObj.name || payload.name || 'validation_error');
-  const message = String(errObj.message || payload.message || (typeof errObj === 'string' ? errObj : '') || '');
-
-  // Extract owner email if Resend test mode returned owner restriction
-  const strPayload = `${message} ${JSON.stringify(payload)}`;
-  const match = strPayload.match(/own email address \(([^)]+)\)/i) ||
-                strPayload.match(/only send testing emails to ([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
-  const ownerEmail = match ? match[1].trim() : undefined;
-
-  return { name, message, ownerEmail };
-}
-
-function getAlertConfig() {
-  const rawKey = process.env.RESEND_API_KEY?.trim() || '';
-  const isPlaceholder =
-    !rawKey ||
-    rawKey === 'YOUR_RESEND_API_KEY' ||
-    rawKey === 'MY_RESEND_API_KEY' ||
-    rawKey === 'RESEND_API_KEY' ||
-    rawKey === 'undefined' ||
-    rawKey === 'null' ||
-    rawKey.length < 8;
-  const apiKey = isPlaceholder ? '' : rawKey;
-
-  const rawTo = process.env.ALERT_EMAIL_TO?.trim() || 'kmsiddesh009@gmail.com';
-  // Parse and clean recipient list into a flat string array
-  const toList = rawTo
-    .split(/[,;\s]+/)
-    .map((e) => e.replace(/['"<>\[\]]/g, '').trim())
-    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
-  const to: string[] = toList.length > 0 ? toList : ['kmsiddesh009@gmail.com'];
-
-  const rawFrom = process.env.ALERT_EMAIL_FROM?.trim();
-
-  // Default to onboarding@resend.dev unless a valid custom verified domain is provided
-  let from = 'onboarding@resend.dev';
-  if (rawFrom && !rawFrom.includes('your-verified-domain.com') && !rawFrom.includes('example.com') && !rawFrom.includes('yourdomain.com')) {
-    const cleaned = rawFrom.replace(/['"]/g, '').trim();
-    const isPublicFreeMail = /@(gmail|yahoo|hotmail|outlook|icloud|aol|proton|mail)\./i.test(cleaned);
-    if (cleaned.includes('@') && !isPublicFreeMail) {
-      from = cleaned.includes('<') ? cleaned : `Gothic Gate <${cleaned}>`;
-    }
-  }
-
-  return { apiKey, to, from };
-}
-
-interface SMTPConfig {
-  user: string;
-  pass: string;
-  host: string;
-  port: number;
-  secure: boolean;
-  from: string;
-}
-
-function getSMTPConfig(): SMTPConfig | null {
-  const user = (process.env.SMTP_USER || process.env.GMAIL_USER || 'kmsiddesh009@gmail.com').trim().replace(/['"]/g, '');
-  const rawPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASSWORD || '').trim().replace(/['"]/g, '');
-  const pass = rawPass.replace(/[\s"']/g, '');
-  if (!user || !pass || pass.length < 4 || pass.includes('your-16-char')) {
-    return null;
-  }
-  const host = (process.env.SMTP_HOST || 'smtp.gmail.com').trim().replace(/['"]/g, '');
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const secure = port === 465;
-  const from = process.env.SMTP_FROM?.trim().replace(/['"]/g, '') || `Gothic Gate <${user}>`;
-  return { user, pass, host, port, secure, from };
-}
-
-function getWebhookUrl(): string | null {
-  const url = (process.env.WEBHOOK_URL || '').trim().replace(/['"]/g, '');
-  if (!url || !url.startsWith('http') || url.includes('placeholder')) {
-    return null;
-  }
-  return url;
-}
-
-async function sendSmtpEmail({
-  to,
-  subject,
-  text,
-  html,
-  attachments,
-}: {
-  to: string[];
-  subject: string;
-  text: string;
-  html: string;
-  attachments?: Array<{ filename: string; content: string }>;
-}): Promise<{ ok: boolean; messageId?: string; error?: string }> {
-  const config = getSMTPConfig();
-  if (!config) return { ok: false, error: 'SMTP not configured' };
-
-  const mailOptions: any = {
-    from: config.from,
-    to: to.join(', '),
-    subject,
-    text,
-    html,
-  };
-
-  if (attachments && attachments.length > 0) {
-    mailOptions.attachments = attachments.map((a) => ({
-      filename: a.filename,
-      content: Buffer.from(a.content, 'base64'),
-    }));
-  }
-
-  // Strategy 1: Dedicated Gmail service transporter
-  try {
-    const gmailTransporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: config.user,
-        pass: config.pass,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
-
-    const info = await gmailTransporter.sendMail(mailOptions);
-    console.log(`[SMTP Email] Successfully delivered email via Gmail service to ${to.join(', ')} (ID: ${info.messageId})`);
-    return { ok: true, messageId: info.messageId };
-  } catch (primaryErr: any) {
-    console.warn('[SMTP Email] Gmail service mode notice, attempting direct host fallback...', primaryErr?.message);
-
-    // Strategy 2: Direct SMTP Host Fallback (Port 465 SSL or Port 587 STARTTLS)
-    try {
-      const fallbackTransporter = nodemailer.createTransport({
-        host: config.host || 'smtp.gmail.com',
-        port: config.port || 465,
-        secure: config.secure,
-        auth: {
-          user: config.user,
-          pass: config.pass,
-        },
-        tls: {
-          rejectUnauthorized: false,
-        },
-      });
-
-      const fallbackInfo = await fallbackTransporter.sendMail(mailOptions);
-      console.log(`[SMTP Email] Successfully delivered email via fallback host to ${to.join(', ')} (ID: ${fallbackInfo.messageId})`);
-      return { ok: true, messageId: fallbackInfo.messageId };
-    } catch (fallbackErr: any) {
-      console.error('[SMTP Email] All SMTP delivery attempts failed:', fallbackErr?.message || fallbackErr);
-      return { ok: false, error: fallbackErr?.message || primaryErr?.message || 'SMTP sending failed' };
-    }
-  }
-}
-
-async function sendWebhookNotification({
-  title,
-  description,
-  fields,
-}: {
-  title: string;
-  description: string;
-  fields?: Array<{ name: string; value: string }>;
-}): Promise<{ ok: boolean; error?: string }> {
-  const webhookUrl = getWebhookUrl();
-  if (!webhookUrl) return { ok: false, error: 'Webhook URL not configured' };
-
-  try {
-    const isDiscord = webhookUrl.includes('discord.com');
-    let payload: any;
-
-    if (isDiscord) {
-      payload = {
-        username: 'Gothic Castle Gates',
-        avatar_url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=200&q=80',
-        embeds: [
-          {
-            title,
-            description,
-            color: 0xe11d48, // Rose Crimson
-            fields: (fields || []).slice(0, 25),
-            footer: { text: 'Gothic Castle Visitor Alert System' },
-            timestamp: new Date().toISOString(),
-          },
-        ],
-      };
-    } else if (webhookUrl.includes('formspree.io')) {
-      const fieldObj: Record<string, string> = {};
-      (fields || []).forEach((f) => {
-        fieldObj[f.name.replace(/[^a-zA-Z0-9_-]/g, '_')] = f.value;
-      });
-      payload = {
-        _subject: title,
-        title,
-        message: description,
-        ...fieldObj,
-        timestamp: new Date().toISOString(),
-      };
-    } else {
-      payload = {
-        title,
-        description,
-        fields,
-        timestamp: new Date().toISOString(),
-      };
-    }
-
-    const resp = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (resp.ok) {
-      console.log('[Webhook] Successfully forwarded event to webhook URL');
-      return { ok: true };
-    } else {
-      const errText = await resp.text().catch(() => '');
-      return { ok: false, error: `Webhook error ${resp.status}: ${errText}` };
-    }
-  } catch (err: any) {
-    return { ok: false, error: err?.message || 'Webhook failed' };
-  }
-}
-
-function escapeHtml(value: string): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function safeAudioExtension(mimeType: string): string {
-  const mime = normalizeMimeType(mimeType);
-  if (mime.includes('ogg')) return 'ogg';
-  if (mime.includes('mp4') || mime.includes('m4a')) return 'm4a';
-  if (mime.includes('mpeg') || mime.includes('mp3')) return 'mp3';
-  if (mime.includes('wav')) return 'wav';
-  return 'webm';
-}
-
-function formatAttemptTime(isoString?: string): string {
-  try {
-    const date = isoString ? new Date(isoString) : new Date();
-    return date.toLocaleString('en-US', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  } catch {
-    return new Date().toUTCString();
-  }
-}
-
+// Gate entrance attempt alert
 app.post('/api/attempt-alert', async (req, res) => {
   try {
-    const { apiKey, to, from } = getAlertConfig();
-
     const {
       sessionId,
       userName,
@@ -438,7 +202,6 @@ app.post('/api/attempt-alert', async (req, res) => {
       attemptNumber,
       method,
       submittedAnswer,
-      normalizedAnswer,
       isCorrect,
       timestamp,
       audioBase64,
@@ -449,7 +212,6 @@ app.post('/api/attempt-alert', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid attempt alert payload.' });
     }
 
-    // Retrieve visitor session if exists or update it
     let session = sessionId ? visitorSessionsMap.get(sessionId) : undefined;
     const visitorDisplayName = userName?.trim() || session?.userName || 'Mortal Visitor';
 
@@ -494,8 +256,8 @@ app.post('/api/attempt-alert', async (req, res) => {
     ].filter(Boolean).join('\n');
 
     const html = `
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:580px;margin:0 auto;background:#0d131f;color:#e2e8f0;border:1px solid #1e293b;border-radius:12px;overflow:hidden;padding:24px;">
-        <h2 style="margin:0 0 8px 0;color:#38bdf8;font-size:20px;letter-spacing:0.02em;">🧛 Gothic Gate Entrance Attempt</h2>
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:580px;margin:0 auto;background:#0d131f;color:#e2e8f0;border:1px solid #1e293b;border-radius:12px;overflow:hidden;padding:24px;">
+        <h2 style="margin:0 0 8px 0;color:#38bdf8;font-size:20px;">🧛 Gothic Gate Entrance Attempt</h2>
         <p style="margin:0 0 20px 0;color:#94a3b8;font-size:14px;">An entrance attempt was recorded at the Gothic Gate.</p>
         
         <div style="background:#141c2c;border:1px solid #1f2d47;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
@@ -519,105 +281,26 @@ app.post('/api/attempt-alert', async (req, res) => {
         <p style="margin:0;color:#64748b;font-size:12px;text-align:center;">Gothic Gate Alert System &bull; Session: ${escapeHtml(String(sessionId || 'unknown'))}</p>
       </div>`;
 
-    // 1. Dispatch via SMTP if configured (Direct & reliable)
-    let smtpResult: any = null;
-    const smtpConfig = getSMTPConfig();
-    if (smtpConfig) {
-      smtpResult = await sendSmtpEmail({
-        to,
-        subject,
-        text: plainText,
-        html,
-        attachments: hasAudio && audioData ? [{ filename: attachmentFilename, content: audioData }] : undefined,
-      });
-    }
-
-    // 2. Dispatch via Webhook if configured (Discord / Slack / Google Sheets)
-    sendWebhookNotification({
-      title: `🧛 Gothic Gate — Attempt #${attemptNum} (${resultStatus})`,
-      description: `**Visitor:** ${visitorDisplayName}\n**Submitted:** "${submittedAnswer}"\n**Method:** ${methodUpper}`,
-      fields: [
+    const alertResult = await sendUniversalEmailAlert({
+      subject,
+      plainText,
+      html,
+      attachments: hasAudio && audioData ? [{ filename: attachmentFilename, content: audioData }] : undefined,
+      webhookTitle: `🧛 Gothic Gate — Attempt #${attemptNum} (${resultStatus})`,
+      webhookDesc: `**Visitor:** ${visitorDisplayName}\n**Submitted:** "${submittedAnswer}"\n**Method:** ${methodUpper}`,
+      webhookFields: [
         { name: 'Result', value: resultIcon },
         { name: 'Time', value: formattedTime },
-        { name: 'Voice Recording', value: hasAudio ? 'Audio recorded and saved' : 'None (Typed)' },
+        { name: 'Voice Recording', value: hasAudio ? 'Audio recorded and attached' : 'None (Typed)' },
       ],
-    }).catch(() => {});
+    });
 
-    // 3. Dispatch via Resend API if configured
-    let resendResult: any = null;
-    if (apiKey) {
-      // Helper function to send email via Resend
-      const sendResendEmail = async (senderFrom: string, includeAttachment: boolean, recipients: string[]) => {
-        const emailBody: any = {
-          from: senderFrom,
-          to: recipients,
-          subject: subject.replace(/[\r\n\t]+/g, ' ').trim(),
-          text: plainText,
-          html,
-        };
-
-        if (includeAttachment && hasAudio && audioData && audioData.length > 50) {
-          emailBody.attachments = [
-            {
-              filename: attachmentFilename.replace(/[^a-zA-Z0-9._-]/g, '_'),
-              content: audioData,
-            },
-          ];
-        }
-
-        try {
-          const response = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(emailBody),
-          });
-
-          const payload = await response.json().catch(() => null);
-          return { ok: response.ok, status: response.status, payload };
-        } catch (err: any) {
-          return { ok: false, status: 500, payload: { message: err?.message || 'Network error connecting to Resend' } };
-        }
-      };
-
-      // Attempt 1: configured sender + audio attachment
-      let result = await sendResendEmail(from, hasAudio, to);
-
-      // If initial send failed (e.g. unverified custom domain or display name), retry with onboarding@resend.dev
-      if (!result.ok) {
-        result = await sendResendEmail('onboarding@resend.dev', hasAudio, to);
-      }
-
-      // If still failed and has audio attachment, retry without attachment
-      if (!result.ok && hasAudio) {
-        result = await sendResendEmail('onboarding@resend.dev', false, to);
-      }
-
-      // If still failed and to has custom or multiple addresses, retry to default address
-      if (!result.ok && (to.length > 1 || to[0] !== 'kmsiddesh009@gmail.com')) {
-        result = await sendResendEmail('onboarding@resend.dev', false, ['kmsiddesh009@gmail.com']);
-      }
-
-      // If Resend rejected because testing emails can only be sent to the account owner's email address:
-      if (!result.ok) {
-        const { ownerEmail } = extractResendErrorInfo(result.payload);
-        if (ownerEmail) {
-          result = await sendResendEmail('onboarding@resend.dev', false, [ownerEmail]);
-        }
-      }
-
-      resendResult = result;
-    }
-
-    const emailSent = Boolean((smtpResult && smtpResult.ok) || (resendResult && resendResult.ok));
-    console.log(`[Attempt Alert] Recorded attempt #${attemptNum} for "${visitorDisplayName}" (${methodUpper}) - Delivered via: SMTP=${smtpResult?.ok ? 'YES' : 'NO'}, Resend=${resendResult?.ok ? 'YES' : 'NO'}`);
+    console.log(`[Attempt Alert] Recorded attempt #${attemptNum} for "${visitorDisplayName}" (${methodUpper}) - Delivered: ${alertResult.ok ? 'YES' : 'NO'}`);
 
     return res.json({
       success: true,
-      emailSent,
-      id: smtpResult?.messageId || resendResult?.payload?.id || 'local-saved',
+      emailSent: alertResult.ok,
+      id: alertResult.id,
     });
   } catch (error: any) {
     console.warn('[Attempt Alert] Notice:', error?.message || error);
@@ -625,7 +308,7 @@ app.post('/api/attempt-alert', async (req, res) => {
   }
 });
 
-// Diagnostic endpoint to check email configuration and run test sends
+// Diagnostic status endpoint
 app.get('/api/alert-status', async (_req, res) => {
   const { apiKey, to, from } = getAlertConfig();
   const hasKey = Boolean(apiKey && apiKey.length > 5);
@@ -639,316 +322,7 @@ app.get('/api/alert-status', async (_req, res) => {
   });
 });
 
-// ==========================================
-// VISITOR SESSIONS & QUESTION RECORDS STORE
-// ==========================================
-
-interface StoredAnswer {
-  questionId: string;
-  questionNumber: number;
-  questionTitle: string;
-  questionPrompt: string;
-  answer: string;
-  normalizedAnswer?: string;
-  method: 'voice' | 'typed';
-  isCorrect?: boolean;
-  timestamp: string;
-  audioBase64?: string;
-  audioMimeType?: string;
-  attachmentFilename?: string;
-}
-
-interface StoredVisitorSession {
-  sessionId: string;
-  userName: string;
-  moniker?: string;
-  email?: string;
-  loginTime: string;
-  status: 'in_progress' | 'completed';
-  startTime: string;
-  completedTime?: string;
-  durationSeconds?: number;
-  totalAttempts: number;
-  answers: StoredAnswer[];
-  emailSent?: boolean;
-  emailSentAt?: string;
-  emailError?: string;
-}
-
-const visitorSessionsMap = new Map<string, StoredVisitorSession>();
-
-// Helper to send immediate Login/Identity Alert Email & Webhook
-async function sendLoginAlertEmail(session: StoredVisitorSession, isUpdate = false) {
-  const { apiKey, to, from } = getAlertConfig();
-  const smtpConfig = getSMTPConfig();
-  const formattedTime = formatAttemptTime(session.loginTime || session.startTime);
-  const actionLabel = isUpdate ? 'Identity Updated' : 'New Visitor Login';
-
-  const subject = `🏰 🧛 Gothic Gate — ${actionLabel}: ${session.userName}`;
-
-  const plainText = [
-    '======================================================',
-    `🏰 GOTHIC GATE — ${actionLabel.toUpperCase()}`,
-    '======================================================',
-    '',
-    `Visitor Name: ${session.userName}`,
-    session.moniker ? `Vampire Moniker / Title: ${session.moniker}` : '',
-    session.email ? `Visitor Email: ${session.email}` : '',
-    `Login / Start Time: ${formattedTime}`,
-    `Session ID: ${session.sessionId}`,
-    `Status: ${session.status}`,
-    '',
-    'The visitor has entered the castle grounds and is beginning the challenges.',
-    `Alert sent to: ${to.join(', ')}`,
-  ].filter(Boolean).join('\n');
-
-  const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #070a12; color: #e2e8f0; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; padding: 24px;">
-      <div style="border-bottom: 1px solid #1e293b; padding-bottom: 14px; margin-bottom: 18px;">
-        <h2 style="margin: 0 0 6px 0; color: #f43f5e; font-size: 20px; letter-spacing: 0.02em;">🏰 🧛 Gothic Gate — ${escapeHtml(actionLabel)}</h2>
-        <p style="margin: 0; color: #94a3b8; font-size: 13px;">A visitor has entered the castle gates.</p>
-      </div>
-      <div style="background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-        <div style="font-size: 16px; font-weight: bold; color: #ffffff; margin-bottom: 8px;">
-          👤 Visitor Name: <span style="color: #f43f5e;">${escapeHtml(session.userName)}</span>
-        </div>
-        ${session.moniker ? `<div style="font-size: 13px; color: #cbd5e1; margin-bottom: 6px;">🧛 <strong>Vampire Moniker:</strong> ${escapeHtml(session.moniker)}</div>` : ''}
-        ${session.email ? `<div style="font-size: 13px; color: #cbd5e1; margin-bottom: 6px;">📧 <strong>Email:</strong> ${escapeHtml(session.email)}</div>` : ''}
-        <div style="font-size: 13px; color: #cbd5e1; margin-bottom: 6px;">⏰ <strong>Login Time:</strong> ${escapeHtml(formattedTime)}</div>
-        <div style="font-size: 11px; color: #64748b; font-family: monospace;">Session ID: ${escapeHtml(session.sessionId)}</div>
-      </div>
-      <p style="margin: 0; color: #64748b; font-size: 11px; text-align: center;">Gothic Gate Alert System &bull; Sent automatically to ${escapeHtml(to.join(', '))}</p>
-    </div>
-  `;
-
-  // 1. Dispatch Webhook
-  sendWebhookNotification({
-    title: `🏰 Visitor Login: ${session.userName}`,
-    description: `A visitor just logged in and started the Gothic quest!\n**Name:** ${session.userName}${session.moniker ? `\n**Alias:** ${session.moniker}` : ''}`,
-    fields: [
-      { name: 'Time', value: formattedTime },
-      { name: 'Session', value: session.sessionId },
-    ],
-  }).catch(() => {});
-
-  // 2. Dispatch SMTP
-  if (smtpConfig) {
-    sendSmtpEmail({
-      to,
-      subject,
-      text: plainText,
-      html,
-    }).catch(() => {});
-  }
-
-  // 3. Dispatch Resend
-  if (apiKey) {
-    fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'onboarding@resend.dev',
-        to,
-        subject,
-        text: plainText,
-        html,
-      }),
-    }).catch(() => {});
-  }
-}
-
-// Helper to send Reset/Restart Alert Email & Webhook
-async function sendResetAlertEmail(session: StoredVisitorSession, stageName = 'Entrance') {
-  const { apiKey, to, from } = getAlertConfig();
-  const smtpConfig = getSMTPConfig();
-  const formattedTime = formatAttemptTime(new Date().toISOString());
-
-  const subject = `🔄 🧛 Gothic Gate — Visitor Reset/Restart: ${session.userName} (${session.answers.length} answers saved)`;
-
-  const plainText = [
-    '======================================================',
-    '🔄 GOTHIC GATE — VISITOR RESET / REPLAY',
-    '======================================================',
-    '',
-    `Visitor Name: ${session.userName}`,
-    session.moniker ? `Vampire Moniker: ${session.moniker}` : '',
-    `Reset Action At: ${formattedTime}`,
-    `Restart Stage: ${stageName}`,
-    `Previous Answers Recorded: ${session.answers.length}`,
-    `Session ID: ${session.sessionId}`,
-    '',
-    'The visitor has restarted/replayed the quest or returned to entrance.',
-    `Alert sent to: ${to.join(', ')}`,
-  ].filter(Boolean).join('\n');
-
-  const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #070a12; color: #e2e8f0; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; padding: 24px;">
-      <div style="border-bottom: 1px solid #1e293b; padding-bottom: 14px; margin-bottom: 18px;">
-        <h2 style="margin: 0 0 6px 0; color: #38bdf8; font-size: 20px; letter-spacing: 0.02em;">🔄 🧛 Gothic Gate — Visitor Reset / Replay</h2>
-        <p style="margin: 0; color: #94a3b8; font-size: 13px;">The visitor has restarted the quest or replayed the quiz.</p>
-      </div>
-      <div style="background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-        <div style="font-size: 16px; font-weight: bold; color: #ffffff; margin-bottom: 8px;">
-          👤 Visitor: <span style="color: #38bdf8;">${escapeHtml(session.userName)}</span>
-        </div>
-        <div style="font-size: 13px; color: #cbd5e1; margin-bottom: 6px;">📍 <strong>Reset Action:</strong> Restarted at ${escapeHtml(stageName)}</div>
-        <div style="font-size: 13px; color: #cbd5e1; margin-bottom: 6px;">📝 <strong>Answers in History:</strong> ${session.answers.length}</div>
-        <div style="font-size: 13px; color: #cbd5e1; margin-bottom: 6px;">⏰ <strong>Reset Time:</strong> ${escapeHtml(formattedTime)}</div>
-        <div style="font-size: 11px; color: #64748b; font-family: monospace;">Session ID: ${escapeHtml(session.sessionId)}</div>
-      </div>
-      <p style="margin: 0; color: #64748b; font-size: 11px; text-align: center;">Gothic Gate Alert System &bull; Sent automatically to ${escapeHtml(to.join(', '))}</p>
-    </div>
-  `;
-
-  // 1. Dispatch Webhook
-  sendWebhookNotification({
-    title: `🔄 Quest Reset/Restart: ${session.userName}`,
-    description: `Visitor **${session.userName}** restarted the journey at **${stageName}** (${session.answers.length} answers in history).`,
-    fields: [
-      { name: 'Time', value: formattedTime },
-      { name: 'Stage', value: stageName },
-    ],
-  }).catch(() => {});
-
-  // 2. Dispatch SMTP
-  if (smtpConfig) {
-    sendSmtpEmail({
-      to,
-      subject,
-      text: plainText,
-      html,
-    }).catch(() => {});
-  }
-
-  // 3. Dispatch Resend
-  if (apiKey) {
-    fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'onboarding@resend.dev',
-        to,
-        subject,
-        text: plainText,
-        html,
-      }),
-    }).catch(() => {});
-  }
-}
-
-// Helper to send instant answer alert email for each question response
-async function sendAnswerAlertEmail(session: StoredVisitorSession, answer: StoredAnswer) {
-  const { apiKey, to, from } = getAlertConfig();
-  const smtpConfig = getSMTPConfig();
-  const formattedTime = formatAttemptTime(answer.timestamp);
-  const isVoice = answer.method === 'voice';
-  const hasAudio = Boolean(answer.audioBase64 && answer.audioBase64.length > 200);
-
-  const subject = `📝 🧛 Gothic Gate — Q#${answer.questionNumber}: ${session.userName} answered "${answer.questionTitle}"`;
-
-  const plainText = [
-    '======================================================',
-    `📝 GOTHIC GATE — QUESTION ANSWER RECORDED (Q#${answer.questionNumber})`,
-    '======================================================',
-    '',
-    `Visitor: ${session.userName}`,
-    session.moniker ? `Moniker / Alias: ${session.moniker}` : '',
-    session.email ? `Email: ${session.email}` : '',
-    `Question #${answer.questionNumber}: ${answer.questionTitle}`,
-    `Prompt / Challenge: "${answer.questionPrompt}"`,
-    `Submitted Answer: "${answer.answer}"`,
-    `Method: ${answer.method.toUpperCase()}`,
-    `Time: ${formattedTime}`,
-    hasAudio ? `Audio Recording: ATTACHED (${answer.attachmentFilename || 'recording.webm'})` : 'Audio Recording: None (Typed)',
-    `Total Answers So Far: ${session.answers.length}`,
-    `Session ID: ${session.sessionId}`,
-    '',
-    `Alert sent to: ${to.join(', ')}`,
-  ].filter(Boolean).join('\n');
-
-  const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #070a12; color: #e2e8f0; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; padding: 24px;">
-      <div style="border-bottom: 1px solid #1e293b; padding-bottom: 14px; margin-bottom: 18px;">
-        <h2 style="margin: 0 0 6px 0; color: #38bdf8; font-size: 20px; letter-spacing: 0.02em;">📝 🧛 Question #${answer.questionNumber} Answered</h2>
-        <p style="margin: 0; color: #94a3b8; font-size: 13px;">${escapeHtml(session.userName)} just submitted an answer.</p>
-      </div>
-
-      <div style="background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; margin-bottom: 18px;">
-        <div style="font-size: 15px; font-weight: bold; color: #ffffff; margin-bottom: 6px;">
-          👤 Visitor: <span style="color: #38bdf8;">${escapeHtml(session.userName)}</span>
-          ${session.moniker ? `<span style="font-size: 12px; color: #94a3b8; font-weight: normal;"> (${escapeHtml(session.moniker)})</span>` : ''}
-        </div>
-        <div style="font-size: 13px; color: #cbd5e1; margin-bottom: 4px;"><strong>Challenge:</strong> ${escapeHtml(answer.questionTitle)}</div>
-        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">${escapeHtml(answer.questionPrompt)}</div>
-
-        <div style="background: #030712; border-left: 3px solid #38bdf8; padding: 10px 14px; border-radius: 4px; color: #ffffff; font-size: 16px; font-style: italic; margin-bottom: 12px;">
-          "${escapeHtml(answer.answer)}"
-        </div>
-
-        <div style="font-size: 12px; color: #94a3b8; display: flex; flex-direction: column; gap: 4px;">
-          <div>Method: <strong style="color: #f1f5f9;">${answer.method.toUpperCase()}</strong></div>
-          ${hasAudio ? `<div>🎙️ Audio: <strong style="color: #4ade80;">ATTACHED (${escapeHtml(answer.attachmentFilename || 'recording.webm')})</strong></div>` : ''}
-          <div>Time: <span style="color: #cbd5e1;">${escapeHtml(formattedTime)}</span></div>
-        </div>
-      </div>
-
-      <p style="margin: 0; color: #64748b; font-size: 11px; text-align: center;">Gothic Gate Alert System &bull; Total Answers Recorded: ${session.answers.length}</p>
-    </div>
-  `;
-
-  // 1. Dispatch Webhook
-  sendWebhookNotification({
-    title: `📝 Q#${answer.questionNumber} Answered by ${session.userName}`,
-    description: `**Challenge:** ${answer.questionTitle}\n**Answer:** "${answer.answer}"\n**Method:** ${answer.method.toUpperCase()}`,
-    fields: [
-      { name: 'Time', value: formattedTime },
-      { name: 'Audio', value: hasAudio ? 'Audio Attached' : 'Typed' },
-    ],
-  }).catch(() => {});
-
-  // 2. Dispatch SMTP
-  if (smtpConfig) {
-    const attachments = hasAudio && answer.audioBase64 && answer.attachmentFilename
-      ? [{ filename: answer.attachmentFilename, content: answer.audioBase64 }]
-      : undefined;
-
-    sendSmtpEmail({
-      to,
-      subject,
-      text: plainText,
-      html,
-      attachments,
-    }).catch((err) => {
-      console.warn('[Answer Alert] SMTP send notice:', err?.message || err);
-    });
-  }
-
-  // 3. Dispatch Resend
-  if (apiKey) {
-    fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'onboarding@resend.dev',
-        to,
-        subject,
-        text: plainText,
-        html,
-      }),
-    }).catch(() => {});
-  }
-}
-
-// Register or update visitor login
+// Register or update visitor session
 app.post('/api/visitor/session', (req, res) => {
   const { sessionId, userName, moniker, email } = req.body ?? {};
   if (!sessionId) {
@@ -1052,7 +426,6 @@ app.post('/api/visitor/record-answer', (req, res) => {
   const paddedNum = String(qNum).padStart(2, '0');
   const attachmentFilename = hasAudio ? `gothic-q${paddedNum}-${questionId}-voice.${extension}` : undefined;
 
-  // Check if answer for this question already exists, update or append
   const existingIdx = session.answers.findIndex((a) => a.questionId === questionId);
   const answerRecord: StoredAnswer = {
     questionId,
@@ -1083,9 +456,9 @@ app.post('/api/visitor/record-answer', (req, res) => {
   return res.json({ success: true, answer: sanitizeAnswer(answerRecord), totalAnswers: session.answers.length });
 });
 
-// Record Page 2 Photo Puzzle Completion or Attempt Result
+// Record Chapter II Photo Puzzle Completion or Attempt Result
 app.post('/api/puzzle/complete', (req, res) => {
-  const { sessionId, moves, timeTakenSeconds, timeRemainingSeconds, attemptNumber, status, puzzleMode, hardFailedAttempts } = req.body ?? {};
+  const { sessionId, moves, timeTakenSeconds, timeRemainingSeconds, attemptNumber, status, puzzleMode } = req.body ?? {};
   if (!sessionId) {
     return res.status(400).json({ success: false, error: 'sessionId is required' });
   }
@@ -1106,13 +479,15 @@ app.post('/api/puzzle/complete', (req, res) => {
     visitorSessionsMap.set(sessionId, session);
   }
 
-  const modeLabel = puzzleMode === 'easy' ? '3x3 Easy Mode' : '6x6 Hard Mode';
+  const mode = (puzzleMode === 'hard' ? 'hard' : 'easy') as 'easy' | 'hard';
+  const modeLabel = mode === 'easy' ? '3x3 Easy Mode' : '6x6 Hard Mode';
   const isSolved = status === 'solved' || status === undefined;
+
   const puzzleRecord: StoredAnswer = {
     questionId: 'page2_photo_puzzle',
     questionNumber: 2,
-    questionTitle: `The Broken Memory Puzzle (${modeLabel})`,
-    questionPrompt: puzzleMode === 'easy'
+    questionTitle: `Chapter II: The Broken Memory Puzzle (${modeLabel})`,
+    questionPrompt: mode === 'easy'
       ? 'Rearrange all 9 broken memory photograph pieces within 60 seconds (Easy Mode).'
       : 'Rearrange all 36 broken memory photograph pieces within 60 seconds (Hard Mode).',
     answer: isSolved
@@ -1130,15 +505,189 @@ app.post('/api/puzzle/complete', (req, res) => {
     session.answers.push(puzzleRecord);
   }
 
-  console.log(`[Puzzle Attempt] "${session.userName}" - ${modeLabel} Attempt #${attemptNumber || 1} result: ${isSolved ? 'SOLVED' : 'TIMEOUT'} (${moves || 0} moves, ${timeTakenSeconds || 0}s).`);
+  console.log(`[Puzzle Attempt] "${session.userName}" - ${modeLabel} Attempt #${attemptNumber || 1} result: ${isSolved ? 'SOLVED' : 'TIMEOUT'}`);
   
-  // Instant per-answer email dispatch
-  void sendAnswerAlertEmail(session, puzzleRecord);
+  // Send dedicated Chapter II Puzzle Solved alert email
+  void sendPuzzleCompleteEmail(session, {
+    moves: Number(moves) || 0,
+    timeTakenSeconds: Number(timeTakenSeconds) || 0,
+    timeRemainingSeconds: Number(timeRemainingSeconds) || 0,
+    puzzleMode: mode,
+    attemptNumber: Number(attemptNumber) || 1,
+    isSolved,
+  });
 
   return res.json({ success: true, record: sanitizeAnswer(puzzleRecord) });
 });
 
-// Complete the quest: aggregates all answers and dispatches the completed Dossier Email
+// Record Chapter III Wake Dracula Complete
+app.post('/api/wake-dracula/complete', (req, res) => {
+  const { sessionId, clicks, timeTakenSeconds, timeRemainingSeconds } = req.body ?? {};
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+
+  let session = visitorSessionsMap.get(sessionId);
+  const now = new Date().toISOString();
+
+  if (!session) {
+    session = {
+      sessionId,
+      userName: 'Mortal Visitor',
+      loginTime: now,
+      status: 'in_progress',
+      startTime: now,
+      totalAttempts: 0,
+      answers: [],
+    };
+    visitorSessionsMap.set(sessionId, session);
+  }
+
+  const wakeRecord: StoredAnswer = {
+    questionId: 'page3_wake_dracula',
+    questionNumber: 3,
+    questionTitle: 'Chapter III: Awakening Lord Dracula',
+    questionPrompt: 'Poke and wake up Dracula 20 times within 20 seconds to claim the Castle Key.',
+    answer: `Dracula Awakened! (${clicks || 20} pokes completed in ${timeTakenSeconds || 0}s - ${timeRemainingSeconds || 0}s remaining). Golden Key Claimed.`,
+    method: 'typed',
+    isCorrect: true,
+    timestamp: now,
+  };
+
+  const existingIdx = session.answers.findIndex((a) => a.questionId === 'page3_wake_dracula');
+  if (existingIdx >= 0) {
+    session.answers[existingIdx] = wakeRecord;
+  } else {
+    session.answers.push(wakeRecord);
+  }
+
+  console.log(`[Wake Dracula] "${session.userName}" successfully awakened Dracula in ${timeTakenSeconds}s.`);
+
+  // Send dedicated Chapter III Dracula Awakened alert email
+  void sendWakeDraculaCompleteEmail(session, {
+    clicks: Number(clicks) || 20,
+    timeTakenSeconds: Number(timeTakenSeconds) || 0,
+    timeRemainingSeconds: Number(timeRemainingSeconds) || 0,
+  });
+
+  return res.json({ success: true, record: sanitizeAnswer(wakeRecord) });
+});
+
+// Record Chapter IV MBBS Quiz Complete (with full 10 questions breakdown)
+app.post('/api/quiz/mbbs-complete', (req, res) => {
+  const { sessionId, score, totalQuestions, tierTitle, questions } = req.body ?? {};
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+
+  let session = visitorSessionsMap.get(sessionId);
+  const now = new Date().toISOString();
+
+  if (!session) {
+    session = {
+      sessionId,
+      userName: 'Mortal Visitor',
+      loginTime: now,
+      status: 'in_progress',
+      startTime: now,
+      totalAttempts: 0,
+      answers: [],
+    };
+    visitorSessionsMap.set(sessionId, session);
+  }
+
+  const scoreNum = Number(score) || 0;
+  const totalNum = Number(totalQuestions) || 10;
+  const percent = Math.round((scoreNum / totalNum) * 100);
+
+  const mbbsRecord: StoredAnswer = {
+    questionId: 'page4_mbbs_quiz',
+    questionNumber: 4,
+    questionTitle: 'Chapter IV: Dr. Dracula MBBS Medical Board Exam',
+    questionPrompt: 'Answer 10 diagnostic clinical pathology and hematology questions.',
+    answer: `Score: ${scoreNum}/${totalNum} (${percent}%) - Medical Diagnosis: ${tierTitle || 'Dr. Dracula Specialist'}`,
+    method: 'typed',
+    isCorrect: scoreNum >= 7,
+    timestamp: now,
+  };
+
+  const existingIdx = session.answers.findIndex((a) => a.questionId === 'page4_mbbs_quiz');
+  if (existingIdx >= 0) {
+    session.answers[existingIdx] = mbbsRecord;
+  } else {
+    session.answers.push(mbbsRecord);
+  }
+
+  console.log(`[MBBS Quiz] "${session.userName}" finished MBBS quiz with score ${scoreNum}/${totalNum} (${percent}%).`);
+
+  // Send dedicated MBBS Exam Results Email with all 10 questions breakdown
+  void sendMBBSQuizCompleteEmail(session, {
+    score: scoreNum,
+    totalQuestions: totalNum,
+    tierTitle: tierTitle || 'Dr. Dracula Board Certified',
+    questions: Array.isArray(questions) ? questions : [],
+  });
+
+  return res.json({ success: true, record: sanitizeAnswer(mbbsRecord) });
+});
+
+// Record Chapter V Couple Quiz Complete (with all 10 questions & reactions)
+app.post('/api/quiz/couple-complete', (req, res) => {
+  const { sessionId, draculaCount, skCount, questions } = req.body ?? {};
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+
+  let session = visitorSessionsMap.get(sessionId);
+  const now = new Date().toISOString();
+
+  if (!session) {
+    session = {
+      sessionId,
+      userName: 'Mortal Visitor',
+      loginTime: now,
+      status: 'in_progress',
+      startTime: now,
+      totalAttempts: 0,
+      answers: [],
+    };
+    visitorSessionsMap.set(sessionId, session);
+  }
+
+  const dCount = Number(draculaCount) || 0;
+  const sCount = Number(skCount) || 0;
+
+  const coupleRecord: StoredAnswer = {
+    questionId: 'page5_couple_quiz',
+    questionNumber: 5,
+    questionTitle: 'Chapter V: Dracula vs SK Couple Edition Trivia',
+    questionPrompt: 'Answer 10 couple trivia questions (Who is more dramatic, romantic, stubborn, etc.).',
+    answer: `Dracula Selected: ${dCount} times | SK Selected: ${sCount} times`,
+    method: 'typed',
+    isCorrect: true,
+    timestamp: now,
+  };
+
+  const existingIdx = session.answers.findIndex((a) => a.questionId === 'page5_couple_quiz');
+  if (existingIdx >= 0) {
+    session.answers[existingIdx] = coupleRecord;
+  } else {
+    session.answers.push(coupleRecord);
+  }
+
+  console.log(`[Couple Quiz] "${session.userName}" finished couple quiz (Dracula: ${dCount}, SK: ${sCount}).`);
+
+  // Send dedicated Couple Quiz Results Email with all 10 questions breakdown
+  void sendCoupleQuizCompleteEmail(session, {
+    draculaCount: dCount,
+    skCount: sCount,
+    questions: Array.isArray(questions) ? questions : [],
+  });
+
+  return res.json({ success: true, record: sanitizeAnswer(coupleRecord) });
+});
+
+// Complete the quest: aggregates all answers and dispatches the Complete Quest Dossier Email
 app.post('/api/visitor/complete-quest', async (req, res) => {
   const { sessionId } = req.body ?? {};
   if (!sessionId) {
@@ -1160,7 +709,7 @@ app.post('/api/visitor/complete-quest', async (req, res) => {
 
   console.log(`[Visitor Store] Quest completed by "${session.userName}" in ${session.durationSeconds}s with ${session.answers.length} answers.`);
 
-  // Send Comprehensive Completed Dossier Email
+  // Send Comprehensive Completed Dossier Email (ALL 6 Chapters + Voice Audio Attachments)
   try {
     const emailResult = await sendCompletedDossierEmail(session);
     if (emailResult.ok) {
@@ -1183,221 +732,6 @@ app.post('/api/visitor/complete-quest', async (req, res) => {
     emailSent: session.emailSent,
   });
 });
-
-// Helper to send comprehensive Completed Dossier Email & Webhook
-async function sendCompletedDossierEmail(session: StoredVisitorSession): Promise<{ ok: boolean; id?: string; error?: string; notice?: string }> {
-  const { apiKey, to, from } = getAlertConfig();
-  const smtpConfig = getSMTPConfig();
-  const webhookUrl = getWebhookUrl();
-
-  const durationMin = Math.floor((session.durationSeconds || 0) / 60);
-  const durationSec = (session.durationSeconds || 0) % 60;
-  const durationStr = durationMin > 0 ? `${durationMin}m ${durationSec}s` : `${durationSec}s`;
-  const formattedStart = formatAttemptTime(session.startTime);
-  const formattedEnd = formatAttemptTime(session.completedTime);
-
-  const subject = `🏰 🧛 Gothic Gate — Complete Quest Dossier: ${session.userName} (${session.answers.length} Answers Completed)`;
-
-  // Plain Text Summary
-  const textLines = [
-    '======================================================',
-    '🧛 GOTHIC GATE — COMPLETED VISITOR DOSSIER & RECORDS',
-    '======================================================',
-    '',
-    `Visitor Name: ${session.userName}`,
-    session.moniker ? `Vampire Alias / Moniker: ${session.moniker}` : '',
-    session.email ? `Visitor Email: ${session.email}` : '',
-    `Login / Start Time: ${formattedStart}`,
-    `Completion Time: ${formattedEnd}`,
-    `Total Quest Time: ${durationStr}`,
-    `Total Answers Recorded: ${session.answers.length}`,
-    `Session ID: ${session.sessionId}`,
-    '',
-    '------------------------------------------------------',
-    'ALL RECORDED QUESTIONS & ANSWERS:',
-    '------------------------------------------------------',
-  ];
-
-  session.answers.forEach((ans, idx) => {
-    textLines.push(
-      `\n[Question #${ans.questionNumber || idx + 1}] ${ans.questionTitle}`,
-      `Prompt: "${ans.questionPrompt}"`,
-      `Submitted Answer: "${ans.answer}"`,
-      `Method: ${ans.method.toUpperCase()}`,
-      `Audio Recording: ${ans.attachmentFilename ? `ATTACHED (${ans.attachmentFilename})` : 'None (Typed)'}`,
-      `Recorded At: ${formatAttemptTime(ans.timestamp)}`
-    );
-  });
-
-  textLines.push(
-    '',
-    '======================================================',
-    `All voice audio files have been preserved and attached.`,
-    `End of Dossier.`
-  );
-
-  const plainText = textLines.filter(Boolean).join('\n');
-
-  // HTML Table of Answers
-  const answersRowsHtml = session.answers
-    .map((ans, idx) => {
-      const isVoice = ans.method === 'voice';
-      const hasAudio = Boolean(ans.audioBase64 && ans.audioBase64.length > 200);
-      return `
-        <tr style="border-bottom: 1px solid #1e293b;">
-          <td style="padding: 12px; font-weight: bold; color: #38bdf8; vertical-align: top; width: 35px;">#${ans.questionNumber || idx + 1}</td>
-          <td style="padding: 12px; vertical-align: top;">
-            <div style="font-weight: 600; color: #f1f5f9; font-size: 14px; margin-bottom: 4px;">${escapeHtml(ans.questionTitle)}</div>
-            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">${escapeHtml(ans.questionPrompt)}</div>
-            <div style="background: #090d16; border-left: 3px solid #38bdf8; padding: 8px 12px; border-radius: 4px; font-style: italic; color: #ffffff; font-size: 15px;">
-              "${escapeHtml(ans.answer)}"
-            </div>
-            <div style="margin-top: 6px; font-size: 11px; color: #64748b;">
-              Method: <span style="color: ${isVoice ? '#38bdf8' : '#cbd5e1'}; font-weight: 600;">${ans.method.toUpperCase()}</span>
-              &bull; ${hasAudio ? `<span style="color: #4ade80;">🎙️ Audio Attached: <b>${escapeHtml(ans.attachmentFilename || 'recording.webm')}</b></span>` : '<span>⌨️ Typed Answer</span>'}
-            </div>
-          </td>
-        </tr>
-      `;
-    })
-    .join('');
-
-  const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 680px; margin: 0 auto; background: #070a12; color: #e2e8f0; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; padding: 28px;">
-      <div style="border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px;">
-        <h2 style="margin: 0 0 6px 0; color: #38bdf8; font-size: 22px; letter-spacing: 0.02em;">🏰 🧛 Gothic Gate — Complete Visitor Dossier</h2>
-        <p style="margin: 0; color: #94a3b8; font-size: 14px;">A visitor has completed the entire Gothic Birthday Journey.</p>
-      </div>
-
-      <!-- Visitor Summary Box -->
-      <div style="background: #0f172a; border: 1px solid #1e2d4d; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px;">
-        <div style="font-size: 16px; font-weight: bold; color: #ffffff; margin-bottom: 8px;">
-          👤 Visitor: <span style="color: #38bdf8;">${escapeHtml(session.userName)}</span>
-          ${session.moniker ? `<span style="font-size: 13px; color: #94a3b8; font-weight: normal;"> (${escapeHtml(session.moniker)})</span>` : ''}
-        </div>
-        ${session.email ? `<div style="font-size: 13px; color: #cbd5e1; margin-bottom: 6px;"><strong>Email:</strong> ${escapeHtml(session.email)}</div>` : ''}
-        <div style="font-size: 13px; color: #94a3b8; margin-bottom: 4px;">
-          <strong>Total Time:</strong> <span style="color: #f1f5f9;">${escapeHtml(durationStr)}</span> &bull; 
-          <strong>Completed At:</strong> <span style="color: #f1f5f9;">${escapeHtml(formattedEnd)}</span>
-        </div>
-        <div style="font-size: 12px; color: #64748b;">
-          Session ID: <code>${escapeHtml(session.sessionId)}</code> &bull; Total Answers Recorded: <strong>${session.answers.length}</strong>
-        </div>
-      </div>
-
-      <!-- Answers Table -->
-      <h3 style="color: #f1f5f9; font-size: 16px; margin: 0 0 12px 0;">📜 All Recorded Question Answers:</h3>
-      <table style="width: 100%; border-collapse: collapse; background: #0c1220; border: 1px solid #1e293b; border-radius: 8px; overflow: hidden; margin-bottom: 24px;">
-        <tbody>
-          ${answersRowsHtml}
-        </tbody>
-      </table>
-
-      <!-- Attachments Notice -->
-      <div style="background: #0b1528; border: 1px dashed #38bdf8; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #93c5fd; margin-bottom: 20px;">
-        🎙️ <strong>Voice Audio Files:</strong> All audio clips recorded from the visitor have been safely attached as audio files.
-      </div>
-
-      <p style="margin: 0; color: #64748b; font-size: 12px; text-align: center;">Gothic Gate Visitor Log System &bull; Sent automatically to ${escapeHtml(to.join(', '))}</p>
-    </div>
-  `;
-
-  // Compile all audio attachments
-  const attachments: any[] = [];
-  session.answers.forEach((ans, idx) => {
-    if (ans.audioBase64 && ans.audioBase64.length > 200) {
-      const rawAudio = stripDataUrl(ans.audioBase64);
-      if (rawAudio.length > 50) {
-        const ext = safeAudioExtension(ans.audioMimeType || 'audio/webm');
-        const filename = ans.attachmentFilename || `gothic-q${idx + 1}-voice.${ext}`;
-        attachments.push({
-          filename,
-          content: rawAudio,
-        });
-      }
-    }
-  });
-
-  // 1. Dispatch via Webhook (Discord / Slack / Google Sheets)
-  sendWebhookNotification({
-    title: `🏆 Gothic Quest Completed: ${session.userName}`,
-    description: `A visitor completed the quest in **${durationStr}**!\n**Total Answers Recorded:** ${session.answers.length}`,
-    fields: [
-      { name: 'Visitor Name', value: session.userName },
-      { name: 'Completed At', value: formattedEnd },
-      { name: 'Audio Clips', value: `${attachments.length} voice recordings saved` },
-    ],
-  }).catch(() => {});
-
-  // 2. Dispatch via SMTP if configured (Direct & reliable!)
-  if (smtpConfig) {
-    const smtpRes = await sendSmtpEmail({
-      to,
-      subject,
-      text: plainText,
-      html,
-      attachments,
-    });
-    if (smtpRes.ok) {
-      return { ok: true, id: smtpRes.messageId };
-    }
-  }
-
-  // 3. Dispatch via Resend API if configured
-  if (apiKey) {
-    const sendEmailPayload = async (senderFrom: string, includeAttachments: boolean, recipients: string[]) => {
-      const body: any = {
-        from: senderFrom,
-        to: recipients,
-        subject: subject.replace(/[\r\n\t]+/g, ' ').trim(),
-        text: plainText,
-        html,
-      };
-      if (includeAttachments && attachments.length > 0) {
-        body.attachments = attachments.map((a) => ({
-          filename: String(a.filename || 'voice-recording.webm').replace(/[^a-zA-Z0-9._-]/g, '_'),
-          content: a.content,
-        }));
-      }
-
-      try {
-        const resp = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        });
-        const data = await resp.json().catch(() => null);
-        return { ok: resp.ok, status: resp.status, data };
-      } catch (err: any) {
-        return { ok: false, status: 500, data: { message: err?.message || 'Connection error to Resend' } };
-      }
-    };
-
-    // Attempt with attachments
-    let res = await sendEmailPayload(from, true, to);
-    if (!res.ok) {
-      res = await sendEmailPayload('onboarding@resend.dev', true, to);
-    }
-    if (!res.ok && attachments.length > 0) {
-      res = await sendEmailPayload('onboarding@resend.dev', false, to);
-    }
-    if (!res.ok && (to.length > 1 || to[0] !== 'kmsiddesh009@gmail.com')) {
-      res = await sendEmailPayload('onboarding@resend.dev', false, ['kmsiddesh009@gmail.com']);
-    }
-
-    if (res.ok) {
-      console.log('[Dossier Email] Delivered full dossier via Resend:', res.data?.id);
-      return { ok: true, id: res.data?.id };
-    }
-  }
-
-  // If neither SMTP nor Resend succeeded, saved locally in visitor session store
-  console.log(`[Dossier Local] Saved complete dossier for "${session.userName}" (${session.answers.length} answers, ${durationStr}). Available in Admin Portal.`);
-  return { ok: true, id: 'local-saved' };
-}
 
 // Get all visitor session records (for Admin / Dossier Explorer)
 app.get('/api/visitor/records', (_req, res) => {
@@ -1487,7 +821,7 @@ app.get('/api/visitor/export-html/:sessionId', (req, res) => {
   return res.send(html);
 });
 
-// Status of all delivery options
+// Admin delivery status
 app.get('/api/admin/status', (_req, res) => {
   const { apiKey, to, from } = getAlertConfig();
   const smtpConfig = getSMTPConfig();
@@ -1514,7 +848,7 @@ app.get('/api/admin/status', (_req, res) => {
   });
 });
 
-// Diagnostic test endpoint across all channels
+// Test dispatch across all channels
 app.post('/api/admin/test-dispatch', async (_req, res) => {
   const { apiKey, to } = getAlertConfig();
   const smtpConfig = getSMTPConfig();
@@ -1527,26 +861,24 @@ app.post('/api/admin/test-dispatch', async (_req, res) => {
     webhook: null,
   };
 
-  // 1. Test SMTP if configured
   if (smtpConfig) {
     const smtpRes = await sendSmtpEmail({
       to,
       subject: '🧛 Gothic Gate — Test Email via SMTP',
-      text: 'Congratulations! Your SMTP (Gmail) integration is active and working. You will receive all entrance attempts and complete dossiers directly.',
+      text: 'Congratulations! Your SMTP (Gmail) integration is active and working. You will receive all entrance attempts, puzzle solutions, MBBS exam scores, couple trivia, and complete dossiers directly.',
       html: `
         <div style="background: #0f172a; color: #f8fafc; padding: 24px; border-radius: 8px; font-family: sans-serif;">
           <h2 style="color: #38bdf8;">🏰 Gothic Gate SMTP Test</h2>
           <p>Your Gmail SMTP connection is working perfectly!</p>
-          <p>All visitor riddle answers, MBBS exam scores, couple trivia choices, and voice recordings will be delivered directly here.</p>
+          <p>All visitor riddle answers, puzzle solutions, MBBS exam scores, couple trivia choices, and voice recordings will be delivered directly here.</p>
         </div>
       `,
     });
     results.smtp = smtpRes;
   } else {
-    results.smtp = { ok: false, error: 'SMTP not configured (Add SMTP_USER & SMTP_PASS in .env or Settings)' };
+    results.smtp = { ok: false, error: 'SMTP not configured (Add SMTP_USER & SMTP_PASS in Settings)' };
   }
 
-  // 2. Test Resend if configured
   if (apiKey) {
     try {
       const resp = await fetch('https://api.resend.com/emails', {
@@ -1571,7 +903,6 @@ app.post('/api/admin/test-dispatch', async (_req, res) => {
     results.resend = { ok: false, error: 'Resend not configured (Add RESEND_API_KEY in Settings)' };
   }
 
-  // 3. Test Webhook if configured
   if (webhookUrl) {
     const whRes = await sendWebhookNotification({
       title: '🧛 Gothic Gate — Test Alert',
@@ -1620,21 +951,7 @@ app.post('/api/visitor/resend-dossier/:sessionId', async (req, res) => {
   }
 });
 
-function sanitizeSession(session: StoredVisitorSession) {
-  return {
-    ...session,
-    answers: session.answers.map(sanitizeAnswer),
-  };
-}
-
-function sanitizeAnswer(answer: StoredAnswer) {
-  return {
-    ...answer,
-    hasAudio: Boolean(answer.audioBase64 && answer.audioBase64.length > 200),
-    audioBase64: undefined, // Hide giant base64 from generic list payloads
-  };
-}
-
+// Test email endpoint
 app.post('/api/test-email', async (_req, res) => {
   try {
     const { apiKey, to } = getAlertConfig();

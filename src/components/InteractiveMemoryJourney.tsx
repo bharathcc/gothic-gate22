@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Volume2, VolumeX, Sparkles, ChevronUp, RotateCcw, X, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, ChevronUp, RotateCcw, X, ChevronLeft, ChevronRight, Maximize2, Telescope, ExternalLink, Star } from 'lucide-react';
 import { birthdayMusicPlayer } from '../utils/birthdayMusic';
 
 export interface MemoryPhoto {
@@ -860,9 +860,8 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
             className="self-start w-52 sm:w-64 will-change-transform cursor-pointer group"
             onClick={() => openPhotoModal(12)}
             style={{
-              transform: `translateX(${(1 - s7Progress) * -40}px) rotate(-4deg)`,
-              opacity: Math.min(1, s7Progress * 1.5),
-              transition: 'transform 0.12s ease-out, opacity 0.12s ease-out',
+              transform: `translate3d(${(1 - s7Progress) * -30}px, 0, 0) rotate(-4deg)`,
+              opacity: Math.min(1, Math.max(0.2, s7Progress * 1.5)),
             }}
           >
             <div className="p-2.5 rounded-2xl bg-white/90 backdrop-blur-md border border-pink-200/80 shadow-[0_10px_25px_rgba(244,114,182,0.18)] transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_16px_35px_rgba(244,63,94,0.28)]">
@@ -872,6 +871,7 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                   alt="Trail 1"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 <div className="absolute top-2 right-2 p-1 rounded-full bg-white/80 text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Maximize2 className="w-3 h-3" />
@@ -885,9 +885,8 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
             className="self-end w-52 sm:w-64 will-change-transform cursor-pointer group"
             onClick={() => openPhotoModal(13)}
             style={{
-              transform: `translateX(${(1 - s7Progress) * 40}px) rotate(5deg)`,
-              opacity: Math.min(1, (s7Progress - 0.1) * 1.5),
-              transition: 'transform 0.12s ease-out, opacity 0.12s ease-out',
+              transform: `translate3d(${(1 - s7Progress) * 30}px, 0, 0) rotate(5deg)`,
+              opacity: Math.min(1, Math.max(0.2, (s7Progress - 0.1) * 1.5)),
             }}
           >
             <div className="p-2.5 rounded-2xl bg-white/90 backdrop-blur-md border border-pink-200/80 shadow-[0_10px_25px_rgba(244,114,182,0.18)] transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_16px_35px_rgba(244,63,94,0.28)]">
@@ -897,6 +896,7 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                   alt="Trail 2"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 <div className="absolute top-2 right-2 p-1 rounded-full bg-white/80 text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Maximize2 className="w-3 h-3" />
@@ -910,9 +910,8 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
             className="self-start w-52 sm:w-64 will-change-transform cursor-pointer group"
             onClick={() => openPhotoModal(14)}
             style={{
-              transform: `translateX(${(1 - s7Progress) * -35}px) rotate(-2deg)`,
-              opacity: Math.min(1, (s7Progress - 0.2) * 1.5),
-              transition: 'transform 0.12s ease-out, opacity 0.12s ease-out',
+              transform: `translate3d(${(1 - s7Progress) * -25}px, 0, 0) rotate(-2deg)`,
+              opacity: Math.min(1, Math.max(0.2, (s7Progress - 0.2) * 1.5)),
             }}
           >
             <div className="p-2.5 rounded-2xl bg-white/90 backdrop-blur-md border border-pink-200/80 shadow-[0_10px_25px_rgba(244,114,182,0.18)] transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_16px_35px_rgba(244,63,94,0.28)]">
@@ -922,6 +921,7 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                   alt="Trail 3"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 <div className="absolute top-2 right-2 p-1 rounded-full bg-white/80 text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Maximize2 className="w-3 h-3" />
@@ -935,9 +935,8 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
             className="self-end w-52 sm:w-64 will-change-transform cursor-pointer group"
             onClick={() => openPhotoModal(15)}
             style={{
-              transform: `translateX(${(1 - s7Progress) * 35}px) rotate(3deg)`,
-              opacity: Math.min(1, (s7Progress - 0.25) * 1.5),
-              transition: 'transform 0.12s ease-out, opacity 0.12s ease-out',
+              transform: `translate3d(${(1 - s7Progress) * 25}px, 0, 0) rotate(3deg)`,
+              opacity: Math.min(1, Math.max(0.2, (s7Progress - 0.25) * 1.5)),
             }}
           >
             <div className="p-2.5 rounded-2xl bg-white/90 backdrop-blur-md border border-pink-200/80 shadow-[0_10px_25px_rgba(244,114,182,0.18)] transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_16px_35px_rgba(244,63,94,0.28)]">
@@ -947,6 +946,7 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                   alt="Trail 4"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 <div className="absolute top-2 right-2 p-1 rounded-full bg-white/80 text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Maximize2 className="w-3 h-3" />
@@ -960,9 +960,8 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
             className="self-start w-52 sm:w-64 will-change-transform cursor-pointer group"
             onClick={() => openPhotoModal(16)}
             style={{
-              transform: `translateX(${(1 - s7Progress) * -35}px) rotate(-3deg)`,
-              opacity: Math.min(1, (s7Progress - 0.3) * 1.5),
-              transition: 'transform 0.12s ease-out, opacity 0.12s ease-out',
+              transform: `translate3d(${(1 - s7Progress) * -25}px, 0, 0) rotate(-3deg)`,
+              opacity: Math.min(1, Math.max(0.2, (s7Progress - 0.3) * 1.5)),
             }}
           >
             <div className="p-2.5 rounded-2xl bg-white/90 backdrop-blur-md border border-pink-200/80 shadow-[0_10px_25px_rgba(244,114,182,0.18)] transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_16px_35px_rgba(244,63,94,0.28)]">
@@ -972,6 +971,7 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                   alt="Trail 5"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 <div className="absolute top-2 right-2 p-1 rounded-full bg-white/80 text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Maximize2 className="w-3 h-3" />
@@ -986,8 +986,7 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
             onClick={() => openPhotoModal(17)}
             style={{
               transform: `scale(${0.92 + s7Progress * 0.1}) rotate(1deg)`,
-              opacity: Math.min(1, (s7Progress - 0.35) * 1.5),
-              transition: 'transform 0.12s ease-out, opacity 0.12s ease-out',
+              opacity: Math.min(1, Math.max(0.2, (s7Progress - 0.35) * 1.5)),
             }}
           >
             <div className="p-3 rounded-2xl bg-white/95 backdrop-blur-md border border-pink-300/80 shadow-[0_14px_35px_rgba(244,63,94,0.2)] transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_18px_45px_rgba(244,63,94,0.32)]">
@@ -997,6 +996,7 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                   alt="Trail 6"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 <div className="absolute top-2.5 right-2.5 p-1 rounded-full bg-white/85 text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
                   <Maximize2 className="w-3.5 h-3.5" />
@@ -1061,8 +1061,53 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
             <span className="w-12 sm:w-20 h-[1.5px] bg-gradient-to-l from-transparent to-pink-300 rounded-full" />
           </div>
 
+          {/* ========================================================================= */}
+          {/* NASA HUBBLE COSMIC BIRTHDAY SURPRISE */}
+          {/* ========================================================================= */}
+          <div className="mt-8 sm:mt-10 w-full max-w-lg mx-auto p-5 sm:p-6 rounded-3xl bg-gradient-to-b from-indigo-950/80 via-purple-950/70 to-slate-950/85 backdrop-blur-xl border border-indigo-400/30 shadow-[0_12px_40px_rgba(79,70,229,0.25)] flex flex-col items-center text-center space-y-3 relative overflow-hidden group">
+            {/* Ambient Star Sparkles Background */}
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-pink-500/20 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="flex items-center gap-2 text-indigo-300 text-xs sm:text-sm font-semibold tracking-wider uppercase">
+              <Telescope className="w-4 h-4 text-amber-300 animate-pulse" />
+              <span>Cosmic Birthday Wonder 🌌</span>
+              <Star className="w-4 h-4 text-amber-300 animate-pulse" />
+            </div>
+
+            <p className="font-cinzel text-base sm:text-lg font-bold text-white tracking-wide">
+              Do you want to know which picture was captured by NASA on your birthday? 🚀✨
+            </p>
+
+            <p className="text-xs sm:text-sm text-indigo-200/80 max-w-md leading-relaxed">
+              Hubble explores the universe 24 hours a day, 365 days a year. Discover the breathtaking celestial wonder NASA captured on your special day!
+            </p>
+
+            <a
+              href="https://science.nasa.gov/specials/apps/what-did-hubble-see-on-your-birthday/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-cinzel text-xs sm:text-sm font-bold tracking-[0.14em] uppercase shadow-[0_4px_20px_rgba(168,85,247,0.4)] hover:shadow-[0_6px_25px_rgba(168,85,247,0.6)] hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
+            >
+              <Telescope className="w-4 h-4 text-amber-200" />
+              <span>What Did NASA Capture On Your Birthday?</span>
+              <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+            </a>
+          </div>
+
           {/* Minimal Action Buttons */}
-          <div className="pt-8 flex flex-col sm:flex-row items-center gap-3.5">
+          <div className="pt-6 sm:pt-8 flex flex-col sm:flex-row items-center gap-3.5">
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-rose-500 via-pink-500 to-rose-500 text-white font-cinzel text-xs font-bold tracking-[0.18em] uppercase shadow-md hover:shadow-lg transition-all duration-300 cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Back to Cake</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={scrollToTop}
