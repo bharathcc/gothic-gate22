@@ -55,21 +55,21 @@ export const FinalBirthdayPage: React.FC<FinalBirthdayPageProps> = ({
     window.addEventListener('click', handleFirstGesture, { once: true, passive: true });
     window.addEventListener('touchstart', handleFirstGesture, { once: true, passive: true });
 
-    // Slow, majestic, cinematic entrance sequence:
-    // Phase 1 (1200ms): "HAPPY BIRTHDAY" gently unfolds with glowing letters (takes ~2.5s)
+    // Snappy, graceful entrance sequence:
+    // Phase 1 (200ms): "HAPPY BIRTHDAY" unfolds
     const t1 = setTimeout(() => {
       setShowHappyBirthday(true);
-    }, 1200);
+    }, 200);
 
-    // Phase 2 (4000ms): "DRACULA" grandly glides in with royal sparkle luminance (takes ~3s)
+    // Phase 2 (600ms): "DRACULA" glides in
     const t2 = setTimeout(() => {
       setShowDracula(true);
-    }, 4000);
+    }, 600);
 
-    // Phase 3 (7600ms): OPEN button is revealed ONLY AFTER "HAPPY BIRTHDAY DRACULA" completely finishes its animation
+    // Phase 3 (1000ms): OPEN button is revealed promptly so user can interact immediately
     const t3 = setTimeout(() => {
       setShowSurprisePrompt(true);
-    }, 7600);
+    }, 1000);
 
     return () => {
       clearTimeout(t1);
