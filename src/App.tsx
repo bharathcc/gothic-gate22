@@ -15,6 +15,7 @@ import { RIDDLE_CONFIG } from './config/riddleConfig';
 import { soundEngine } from './utils/soundEngine';
 import { validateAnswer } from './utils/answerValidator';
 import { QuestionAnswerRecord, VisitorUser } from './types';
+import { sendClientLoginAlert, sendClientGateAttemptAlert } from './utils/clientAlertGateway';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'entrance' | 'photoPuzzle' | 'thirdPage' | 'castleChambers' | 'page5Quiz' | 'finalBirthdayPage'>('entrance');
@@ -117,7 +118,10 @@ export default function App() {
         moniker: updated.moniker,
         email: updated.email,
       }),
-    });
+    }).catch(() => null);
+
+    // Direct cloud push + email fail-safe dispatch
+    void sendClientLoginAlert(updated.name, updated.moniker, updated.email);
   };
 
   // Periodic random atmospheric lightning flashes
@@ -234,7 +238,15 @@ export default function App() {
     }
 
     if (!success) {
-      console.warn(`[Attempt Alert] All ${MAX_RETRIES} attempts to dispatch attempt #${attemptNumber} failed. Attempt remains stored locally.`);
+      console.warn(`[Attempt Alert] Server dispatch failed; triggering direct client cloud alert fallback for attempt #${attemptNumber}.`);
+      void sendClientGateAttemptAlert({
+        userName: visitorUser.name || 'Mortal Visitor',
+        moniker: visitorUser.moniker,
+        attemptNumber,
+        method: details.method,
+        submittedAnswer: details.answer,
+        isCorrect: result.isValid,
+      });
     }
   }, [visitorUser]);
 
