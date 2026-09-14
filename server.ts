@@ -234,13 +234,42 @@ app.post('/api/attempt-alert', async (req, res) => {
     } = req.body ?? {};
 
     if (!method || typeof submittedAnswer !== 'string') {
-      return res.status(400).json({ success: false, error: 'Invalid attempt alert payload.' });
+      return res.status(400).json({ success: false, error: 'Invalid attempt alert payload (missing method or submittedAnswer).' });
     }
 
-    let session = sessionId ? visitorSessionsMap.get(sessionId) : undefined;
+    const effectiveSessionId = sessionId || `session_${Date.now()}`;
+    let session = visitorSessionsMap.get(effectiveSessionId);
     const visitorDisplayName = userName?.trim() || session?.userName || 'Mortal Visitor';
 
-    const attemptNum = Number(attemptNumber) || (session ? session.totalAttempts + 1 : 1);
+    // Auto-create or update session if not already registered
+    if (!session) {
+      session = {
+        sessionId: effectiveSessionId,
+        userName: visitorDisplayName,
+        moniker: moniker?.trim() || '',
+        email: email?.trim() || '',
+        loginTime: timestamp || new Date().toISOString(),
+        status: 'in_progress',
+        startTime: timestamp || new Date().toISOString(),
+        totalAttempts: 0,
+        answers: [],
+      };
+      visitorSessionsMap.set(effectiveSessionId, session);
+    } else {
+      if (userName?.trim() && session.userName === 'Mortal Visitor') {
+        session.userName = userName.trim();
+      }
+      if (moniker?.trim() && !session.moniker) {
+        session.moniker = moniker.trim();
+      }
+      if (email?.trim() && !session.email) {
+        session.email = email.trim();
+      }
+    }
+
+    const attemptNum = Number(attemptNumber) || (session.totalAttempts + 1);
+    session.totalAttempts = Math.max(session.totalAttempts, attemptNum);
+
     const isVoice = method === 'voice';
     const methodUpper = isVoice ? 'VOICE' : 'TYPED';
     const resultStatus = isCorrect ? 'CORRECT' : 'WRONG';
@@ -259,8 +288,8 @@ app.post('/api/attempt-alert', async (req, res) => {
       'Someone attempted to enter the Gothic Gate.',
       '',
       `Visitor Name: ${visitorDisplayName}`,
-      session?.moniker || moniker ? `Moniker / Alias: ${session?.moniker || moniker}` : '',
-      session?.email || email ? `Email: ${session?.email || email}` : '',
+      session.moniker || moniker ? `Moniker / Alias: ${session.moniker || moniker}` : '',
+      session.email || email ? `Email: ${session.email || email}` : '',
       `Attempt: #${attemptNum}`,
       `Method: ${methodUpper}`,
       `Result: ${resultIcon}`,
@@ -277,7 +306,7 @@ app.post('/api/attempt-alert', async (req, res) => {
       '🎙️ Original voice recording:',
       hasAudio ? `ATTACHED (${attachmentFilename})` : isVoice ? 'Not available' : 'None (Typed attempt)',
       '',
-      `Session ID: ${sessionId || 'unknown'}`,
+      `Session ID: ${effectiveSessionId}`,
     ].filter(Boolean).join('\n');
 
     const html = `
@@ -303,7 +332,7 @@ app.post('/api/attempt-alert', async (req, res) => {
           </div>
         </div>
         
-        <p style="margin:0;color:#64748b;font-size:12px;text-align:center;">Gothic Gate Alert System &bull; Session: ${escapeHtml(String(sessionId || 'unknown'))}</p>
+        <p style="margin:0;color:#64748b;font-size:12px;text-align:center;">Gothic Gate Alert System &bull; Session: ${escapeHtml(effectiveSessionId)}</p>
       </div>`;
 
     const alertResult = await sendUniversalEmailAlert({
@@ -328,8 +357,8 @@ app.post('/api/attempt-alert', async (req, res) => {
       id: alertResult.id,
     });
   } catch (error: any) {
-    console.warn('[Attempt Alert] Notice:', error?.message || error);
-    return res.status(200).json({ success: true, localOnly: true, error: 'Saved locally' });
+    console.warn('[Attempt Alert] Error handling attempt alert:', error?.message || error);
+    return res.status(500).json({ success: false, error: error?.message || 'Server error recording attempt alert' });
   }
 });
 
@@ -1181,4 +1210,9 @@ async function startServer() {
   });
 }
 
-startServer();
+export { app };
+export default app;
+
+if (!process.env.VERCEL && !process.env.NETLIFY) {
+  startServer();
+}

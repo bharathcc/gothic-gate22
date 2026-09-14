@@ -525,16 +525,16 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
           </div>
 
           {/* Bottom Gradient Shade & Quick Navigation Strip */}
-          <div className="relative z-20 w-full bg-white/90 backdrop-blur-md border-t border-pink-200/80 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 max-w-6xl mx-auto shadow-sm">
-            {/* Left: Quick Hubble Link */}
+          <div className="relative z-20 w-full bg-white/95 backdrop-blur-md border-t border-pink-200/80 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 max-w-6xl mx-auto shadow-sm">
+            {/* Left: Clear NASA Question & Link */}
             <a
               href="https://science.nasa.gov/specials/apps/what-did-hubble-see-on-your-birthday/"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-950 hover:bg-indigo-900 text-white text-xs font-semibold shadow-xs hover:scale-105 active:scale-95 transition-all border border-indigo-400/50 cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-950 hover:bg-indigo-900 text-white text-xs font-semibold shadow-xs hover:scale-105 active:scale-95 transition-all border border-indigo-400/50 cursor-pointer"
             >
               <Telescope className="w-3.5 h-3.5 text-amber-300" />
-              <span>NASA Hubble Birthday ↗</span>
+              <span>Do you want to know which picture was captured by NASA on your birthday? 🌌 ↗</span>
             </a>
 
             {/* Right: Actions */}
@@ -683,16 +683,29 @@ export const InteractiveMemoryJourney: React.FC<InteractiveMemoryJourneyProps> =
                 DRACULA 🎂✨
               </h3>
 
-              {/* EXACT 1-LINE NASA SECTION */}
-              <div className="mt-8 px-5 py-3 rounded-full bg-pink-50/90 border border-pink-200 shadow-xs flex flex-wrap items-center justify-center gap-2.5 text-xs sm:text-sm text-pink-800 font-cinzel font-medium">
-                <span>Do you want to know which picture was captured by NASA on your birthday? 🌌✨</span>
+              {/* NASA COSMIC BIRTHDAY PICTURE EXPLORER SECTION */}
+              <div className="mt-8 w-full max-w-xl p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/50 shadow-[0_12px_36px_rgba(79,70,229,0.3)] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-indigo-900/90 border border-indigo-400/40 text-amber-300 shadow-sm shrink-0">
+                    <Telescope className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <p className="text-sm sm:text-base font-cinzel font-bold text-indigo-100 leading-snug">
+                      Do you want to know which picture was captured by NASA on your birthday? 🌌✨
+                    </p>
+                    <p className="text-xs font-cormorant italic text-indigo-300/90 mt-0.5">
+                      Explore the cosmic galaxy image captured by the Hubble Space Telescope on your special day!
+                    </p>
+                  </div>
+                </div>
+
                 <a
                   href="https://science.nasa.gov/specials/apps/what-did-hubble-see-on-your-birthday/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-indigo-950 hover:bg-indigo-900 text-white text-xs font-semibold shadow-xs hover:scale-105 active:scale-95 transition-all border border-indigo-400/50 cursor-pointer"
+                  className="shrink-0 inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 text-xs font-cinzel font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-200"
                 >
-                  <Telescope className="w-3.5 h-3.5 text-amber-300" />
+                  <Telescope className="w-3.5 h-3.5 text-slate-950" />
                   <span>See Hubble Picture ↗</span>
                 </a>
               </div>

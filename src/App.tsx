@@ -162,7 +162,7 @@ export default function App() {
     };
   }, []);
 
-  // Attempt Alert + Direct Server Email & Storage Dispatch
+  // Attempt Alert + Direct Server Email & Storage Dispatch with Multi-Attempt Retry & Timeout Protection
   const sendAttemptAlert = useCallback(async (details: {
     answer: string;
     method: 'voice' | 'typed';
@@ -175,27 +175,66 @@ export default function App() {
       localStorage.setItem(`gothic-entrance-attempts-${sessionIdRef.current}`, String(attemptNumber));
     } catch {}
 
-    try {
-      await fetch('/api/attempt-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: sessionIdRef.current,
-          userName: visitorUser.name,
-          moniker: visitorUser.moniker,
-          email: visitorUser.email,
-          attemptNumber,
-          method: details.method,
-          submittedAnswer: details.answer,
-          normalizedAnswer: result.normalized,
-          isCorrect: result.isValid,
-          timestamp: new Date().toISOString(),
-          audioBase64: details.audioBase64,
-          audioMimeType: details.audioMimeType,
-        }),
-      });
-    } catch (error) {
-      console.warn('[Attempt Alert] Could not send email alert:', error);
+    const payload = {
+      sessionId: sessionIdRef.current,
+      userName: visitorUser.name || 'Mortal Visitor',
+      moniker: visitorUser.moniker || '',
+      email: visitorUser.email || '',
+      attemptNumber,
+      method: details.method,
+      submittedAnswer: details.answer,
+      normalizedAnswer: result.normalized,
+      isCorrect: result.isValid,
+      timestamp: new Date().toISOString(),
+      audioBase64: details.audioBase64,
+      audioMimeType: details.audioMimeType,
+    };
+
+    // Retry loop with exponential backoff and timeout
+    const MAX_RETRIES = 3;
+    let success = false;
+
+    for (let tryIndex = 0; tryIndex < MAX_RETRIES && !success; tryIndex++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+
+      try {
+        // If previous try failed and we had audio, fallback to lightweight text payload
+        const currentBody = (tryIndex > 0 && payload.audioBase64)
+          ? { ...payload, audioBase64: undefined }
+          : payload;
+
+        const response = await fetch('/api/attempt-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentBody),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const resData = await response.json().catch(() => ({}));
+          console.log(`[Attempt Alert] Successfully dispatched attempt #${attemptNumber} (Email sent: ${resData.emailSent ? 'YES' : 'NO'})`);
+          success = true;
+          break;
+        } else {
+          console.warn(`[Attempt Alert] Server responded with status ${response.status} on attempt ${tryIndex + 1}`);
+        }
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        const isAbort = err?.name === 'AbortError';
+        console.warn(`[Attempt Alert] Attempt ${tryIndex + 1} error (${isAbort ? 'Timeout' : err?.message || 'Network error'})`);
+      }
+
+      // Backoff delay before retrying
+      if (!success && tryIndex < MAX_RETRIES - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 600 * (tryIndex + 1)));
+      }
+    }
+
+    if (!success) {
+      console.warn(`[Attempt Alert] All ${MAX_RETRIES} attempts to dispatch attempt #${attemptNumber} failed. Attempt remains stored locally.`);
     }
   }, [visitorUser]);
 
